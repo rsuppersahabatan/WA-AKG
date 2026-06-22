@@ -196,12 +196,12 @@ function ChatRow({
             )}
             <div
                 className={cn(
-                    "relative w-full flex items-center gap-3 px-3 py-2.5 transition-colors duration-150 border-b border-border/10 group overflow-hidden",
+                    "relative w-full flex items-center gap-3 px-3 py-2.5 transition-colors duration-150 border-b border-border/10 group overflow-hidden cursor-pointer",
                     isSelected
                         ? "bg-primary/8 border-l-2 border-l-primary"
                         : "hover:bg-muted/40 border-l-2 border-l-transparent"
                 )}
-                onDoubleClick={() => onSelect(chat.jid, displayName)}
+                onClick={() => onSelect(chat.jid, displayName)}
                 onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, jid: chat.jid, name: displayName }); }}
             >
                 <Avatar className="h-10 w-10 flex-shrink-0">
@@ -211,7 +211,7 @@ function ChatRow({
                     </AvatarFallback>
                 </Avatar>
 
-                <div className="flex-1 min-w-0 overflow-hidden cursor-pointer" onClick={() => onSelect(chat.jid, displayName)}>
+                <div className="flex-1 min-w-0 overflow-hidden">
                     <div className="flex justify-between items-baseline gap-2 overflow-hidden">
                         <h4 className={cn("text-sm truncate flex items-center gap-1.5", isSelected ? "font-semibold text-primary" : "font-medium text-foreground")}>
                             {displayName}
@@ -260,6 +260,7 @@ function SkeletonRow() {
 export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps) {
     const [chats, setChats] = useState<ChatContact[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchInput, setSearchInput] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
     const [isNewChatOpen, setIsNewChatOpen] = useState(false);
     const [newChatNumber, setNewChatNumber] = useState("");
@@ -272,30 +273,37 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
     const cursorRef = useRef<string | undefined>(undefined);
     const chatsRef = useRef<ChatContact[]>(chats);
     chatsRef.current = chats;
+    const fetchingRef = useRef(false);
 
     const fetchChats = useCallback(async (cursor?: string, append = false) => {
+        if (fetchingRef.current) return;
+        fetchingRef.current = true;
         try {
             if (!cursor) setLoading(true);
             const rawChats: any = await getChatsStatus(sessionId, PAGE_SIZE, cursor || undefined, searchQuery || undefined);
-            if (append) {
-                setChats(prev => {
-                    const merged = new Map(prev.map(c => [c.jid, c]));
-                    (rawChats || []).forEach((c: any) => {
-                        const existing = merged.get(c.jid);
-                        if (!existing || (c.lastMessage?.timestamp && (!existing.lastMessage?.timestamp || new Date(c.lastMessage.timestamp) > new Date(existing.lastMessage.timestamp)))) {
-                            merged.set(c.jid, c);
-                        }
-                    });
-                    return Array.from(merged.values());
+            
+            const processChats = (newChatsList: ChatContact[], existingChatsList: ChatContact[] = []) => {
+                const merged = new Map(existingChatsList.map(c => [c.jid, c]));
+                (newChatsList || []).forEach((c: any) => {
+                    const existing = merged.get(c.jid);
+                    if (!existing || (c.lastMessage?.timestamp && (!existing.lastMessage?.timestamp || new Date(c.lastMessage.timestamp) > new Date(existing.lastMessage.timestamp)))) {
+                        merged.set(c.jid, c);
+                    }
                 });
+                return Array.from(merged.values());
+            };
+
+            if (append) {
+                setChats(prev => processChats(rawChats, prev));
             } else {
-                setChats(rawChats || []);
+                setChats(processChats(rawChats));
             }
             setHasMore((rawChats || []).length >= PAGE_SIZE);
         } catch (error) {
             console.error("Failed to load chats", error);
         } finally {
             setLoading(false);
+            fetchingRef.current = false;
         }
     }, [sessionId, searchQuery]);
 
@@ -354,9 +362,11 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
     }, [sessionId]);
 
     const handleSearchChange = (val: string) => {
-        setSearchQuery(val);
+        setSearchInput(val);
         if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-        searchTimerRef.current = setTimeout(() => { fetchChats(); }, 300);
+        searchTimerRef.current = setTimeout(() => {
+            setSearchQuery(val);
+        }, 300);
     };
 
     const filteredChats = useMemo(() => {
@@ -378,7 +388,7 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
     }, [hasMore, loading, searchQuery, fetchChats]);
 
     const itemContent = useCallback(
-        (_: number, chat: ChatContact) => <ChatRow chat={chat} isSelected={selectedJid === chat.jid} onSelect={onSelectChat} sessionId={sessionId} labelDots={chatLabelMap.get(chat.jid) || []} />,
+        (_: number, chat: ChatContact) => <ChatRow key={chat.jid} chat={chat} isSelected={selectedJid === chat.jid} onSelect={onSelectChat} sessionId={sessionId} labelDots={chatLabelMap.get(chat.jid) || []} />,
         [selectedJid, onSelectChat, sessionId, chatLabelMap]
     );
 
@@ -419,7 +429,7 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
 
                 <div className="relative">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input placeholder="Search chats..." value={searchQuery}
+                    <Input placeholder="Search chats..." value={searchInput}
                         onChange={(e) => handleSearchChange(e.target.value)}
                         className="h-8 pl-8 text-sm bg-muted/50 border-0 rounded-lg focus-visible:ring-1" />
                 </div>
@@ -449,7 +459,7 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
                     </div>
                 ) : (
                     <Virtuoso style={{ height: "100%" }} data={filteredChats}
-                        computeItemKey={(_, chat) => chat.jid} itemContent={itemContent}
+                        computeItemKey={(_: number, chat: ChatContact) => chat.jid} itemContent={itemContent}
                         endReached={handleEndReached} increaseViewportBy={200}
                         components={{ Footer: () => hasMore && !loading ? (
                             <div className="py-4 text-center">

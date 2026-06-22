@@ -65,7 +65,11 @@ export class ChatService {
 
         // 3. Build result array (already sorted by SQL DESC)
         const result: any[] = [];
+        const seenJids = new Set<string>();
         for (const msg of rawLastMessages) {
+            if (seenJids.has(msg.remoteJid)) continue;
+            seenJids.add(msg.remoteJid);
+
             const info = infoMap.get(msg.remoteJid);
             result.push({
                 jid: msg.remoteJid,
