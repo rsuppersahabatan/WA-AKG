@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, Paperclip, ArrowLeft, Phone, MoreVertical } from "lucide-react";
+import { Send, Paperclip, ArrowLeft, FileText, Image as ImageIcon, Music, Sticker as StickerIcon, Video, Download } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Image as ImageIcon, FileText, Music, Sticker as StickerIcon, Video, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { io, Socket } from "socket.io-client";
 import { toast } from "sonner";
 import { getChatMessages, sendChatMessage, sendMediaMessage } from "@/app/dashboard/chat/actions";
+import { useSocket } from "./socket-context";
 
 interface Message {
     keyId: string;
@@ -31,66 +30,187 @@ interface ChatWindowProps {
     onBack?: () => void;
 }
 
+const PAGE_SIZE = 50;
+
+// Lazy image component — only loads when visible
+function LazyMedia({ src, alt, className }: { src: string; alt: string; className: string }) {
+    const imgRef = useRef<HTMLImageElement>(null);
+    const [loaded, setLoaded] = useState(false);
+    const [visible, setVisible] = useState(false);
+
+    useEffect(() => {
+        const el = imgRef.current;
+        if (!el) return;
+        const obs = new IntersectionObserver(
+            ([entry]) => { if (entry.isIntersecting) { setVisible(true); obs.disconnect(); } },
+            { rootMargin: "200px" }
+        );
+        obs.observe(el);
+        return () => obs.disconnect();
+    }, []);
+
+    return (
+        <div ref={imgRef} className={className}>
+            {visible ? (
+                <img
+                    src={src}
+                    alt={alt}
+                    className={`rounded-lg max-h-60 object-cover w-full cursor-pointer hover:opacity-95 transition-opacity ${loaded ? 'opacity-100' : 'opacity-0'}`}
+                    onLoad={() => setLoaded(true)}
+                    loading="lazy"
+                />
+            ) : (
+                <div className="rounded-lg h-40 bg-muted/30 animate-pulse" />
+            )}
+        </div>
+    );
+}
+
+// Lazy video component
+function LazyVideo({ src, className }: { src: string; className: string }) {
+    const vidRef = useRef<HTMLDivElement>(null);
+    const [visible, setVisible] = useState(false);
+
+    useEffect(() => {
+        const el = vidRef.current;
+        if (!el) return;
+        const obs = new IntersectionObserver(
+            ([entry]) => { if (entry.isIntersecting) { setVisible(true); obs.disconnect(); } },
+            { rootMargin: "200px" }
+        );
+        obs.observe(el);
+        return () => obs.disconnect();
+    }, []);
+
+    return (
+        <div ref={vidRef} className={className}>
+            {visible ? (
+                <video src={src} controls className="rounded-lg max-h-60 w-full" preload="none" />
+            ) : (
+                <div className="rounded-lg h-32 bg-muted/30 animate-pulse flex items-center justify-center">
+                    <Video className="h-6 w-6 text-muted-foreground/50" />
+                </div>
+            )}
+        </div>
+    );
+}
+
 export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState("");
     const scrollRef = useRef<HTMLDivElement>(null);
-    const [socket, setSocket] = useState<Socket | null>(null);
+    const bottomRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploadType, setUploadType] = useState<string>("image");
     const [isDragging, setIsDragging] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [oldestTimestamp, setOldestTimestamp] = useState<string | null>(null);
+    const [autoScroll, setAutoScroll] = useState(true);
 
-    const scrollToBottom = (smooth = true) => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
-        }
-    };
+    const { getSocket, joinSession } = useSocket();
 
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+    const scrollToBottom = useCallback((smooth = true) => {
+        bottomRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
+    }, []);
 
-    const fetchMessages = async () => {
+    // Fetch initial + older messages
+    const fetchMessages = useCallback(async (before?: string) => {
         try {
-            const data = await getChatMessages(sessionId, jid);
-            setMessages((data as any) || []);
-            setTimeout(() => scrollToBottom(false), 100);
-        } catch (error) {
-            console.error("Failed to load messages via Server Action", error);
-        }
-    }
+            if (!before) setLoading(true);
+            else setLoadingMore(true);
 
+            const data: any = await getChatMessages(sessionId, jid, PAGE_SIZE, before);
+
+            if (!before) {
+                setMessages(data.messages || []);
+                setAutoScroll(true);
+            } else if (data.messages?.length > 0) {
+                setMessages(prev => [...(data.messages || []), ...prev]);
+            }
+
+            setHasMore(data.hasMore);
+            if (data.messages?.length > 0) {
+                setOldestTimestamp(data.messages[0].timestamp);
+            }
+        } catch (error) {
+            console.error("Failed to load messages", error);
+        } finally {
+            setLoading(false);
+            setLoadingMore(false);
+        }
+    }, [sessionId, jid]);
+
+    // Initial load
     useEffect(() => {
         setMessages([]);
+        setOldestTimestamp(null);
+        setHasMore(false);
         fetchMessages();
+    }, [fetchMessages]);
 
-        const newSocket = io({
-            path: "/api/socket/io",
-            addTrailingSlash: false,
-        });
+    // Socket real-time updates — shared connection
+    useEffect(() => {
+        const socket = getSocket();
+        if (!socket) return;
 
-        newSocket.on("connect", () => {
-            newSocket.emit("join-session", sessionId);
-        });
+        const onConnect = () => joinSession(sessionId);
+        if (socket.connected) joinSession(sessionId);
+        socket.on("connect", onConnect);
 
         const normalizedJid = jid.endsWith("@c.us") ? jid.replace("@c.us", "@s.whatsapp.net") : jid;
 
-        newSocket.on("message.update", (newMessages: Message[]) => {
-            setMessages((prev) => {
-                const combined = [...prev, ...newMessages.filter(m => 
-                    m.remoteJid === normalizedJid || prev.some(p => p.remoteJid === m.remoteJid)
-                )];
+        const handler = (newMessages: Message[]) => {
+            setMessages(prev => {
+                const relevant = newMessages.filter(m =>
+                    m.remoteJid === normalizedJid ||
+                    prev.some(p => p.remoteJid === m.remoteJid)
+                );
+                if (relevant.length === 0) return prev;
+
+                const combined = [...prev, ...relevant];
                 const unique = Array.from(new Map(combined.map(m => [m.keyId, m])).values());
                 return unique.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
             });
-        });
+        };
 
-        setSocket(newSocket);
+        socket.on("message.update", handler);
 
         return () => {
-            newSocket.disconnect();
+            socket.off("connect", onConnect);
+            socket.off("message.update", handler);
         };
-    }, [sessionId, jid]);
+    }, [sessionId, jid, getSocket, joinSession]);
+
+    // Auto-scroll to bottom on new messages (only if already at bottom)
+    useEffect(() => {
+        if (autoScroll) {
+            scrollToBottom(false);
+        }
+    }, [messages, autoScroll, scrollToBottom]);
+
+    // Track scroll position to detect manual scroll-up
+    const handleScroll = useCallback(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+        setAutoScroll(atBottom);
+
+        // Load older messages when scrolled to top
+        if (el.scrollTop < 100 && hasMore && !loadingMore && oldestTimestamp) {
+            const prevHeight = el.scrollHeight;
+            fetchMessages(oldestTimestamp).then(() => {
+                // Preserve scroll position after prepending
+                requestAnimationFrame(() => {
+                    if (scrollRef.current) {
+                        scrollRef.current.scrollTop = scrollRef.current.scrollHeight - prevHeight;
+                    }
+                });
+            });
+        }
+    }, [hasMore, loadingMore, oldestTimestamp, fetchMessages]);
 
     const handleSend = async () => {
         if (!newMessage.trim()) return;
@@ -98,7 +218,6 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
         try {
             await sendChatMessage(sessionId, jid, newMessage);
             setNewMessage("");
-            // Give Baileys time to fire messages.upsert and save to DB
             setTimeout(() => fetchMessages(), 800);
         } catch (e: any) {
             console.error(e);
@@ -136,56 +255,16 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
         await processFileUpload(file, uploadType);
-        
-        if (fileInputRef.current) {
-            fileInputRef.current.value = "";
-        }
+        if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
-    const handleDragOver = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(true);
-    };
-
-    const handleDragLeave = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(false);
-    };
-
+    const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
+    const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
     const handleDrop = async (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setIsDragging(false);
-
+        e.preventDefault(); e.stopPropagation(); setIsDragging(false);
         const files = e.dataTransfer.files;
-        if (files && files.length > 0) {
-            // Process the first file for now
-            await processFileUpload(files[0]);
-        }
-    };
-
-    const handleDownload = async (url: string, fileName: string) => {
-        try {
-            toast.info("Downloading file...");
-            const response = await fetch(url);
-            if (!response.ok) throw new Error("File not found or unreachable");
-            const blob = await response.blob();
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(downloadUrl);
-        } catch (error) {
-            console.error("Download failed", error);
-            toast.error("Download failed! Ensure the file URL is accessible.");
-        }
+        if (files?.[0]) await processFileUpload(files[0]);
     };
 
     const triggerUpload = (type: string) => {
@@ -196,31 +275,52 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
         }
     };
 
-    // Group messages by date
-    const getDateLabel = (timestamp: string) => {
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-        if (diffDays === 0) return "Today";
-        if (diffDays === 1) return "Yesterday";
-        return date.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
-    };
-
     const displayName = name || jid.split('@')[0];
 
+    // Date labels memoized
+    const getDateLabel = (() => {
+        const cache = new Map<string, string>();
+        return (timestamp: string) => {
+            if (cache.has(timestamp)) return cache.get(timestamp)!;
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+            let label: string;
+            if (diffDays === 0) label = "Today";
+            else if (diffDays === 1) label = "Yesterday";
+            else label = date.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
+            cache.set(timestamp, label);
+            return label;
+        };
+    })();
+
+    if (loading) {
+        return (
+            <div className="flex h-full items-center justify-center">
+                <div className="h-6 w-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+            </div>
+        );
+    }
+
     return (
-        <div 
+        <div
             className="flex flex-col h-full bg-muted/20 relative"
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
         >
+            {/* Loading older indicator */}
+            {loadingMore && (
+                <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-background/80 backdrop-blur-sm px-3 py-1 rounded-full shadow-sm border text-xs flex items-center gap-2">
+                    <div className="h-3 w-3 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                    Loading older...
+                </div>
+            )}
+
             {/* Drag & Drop Overlay */}
             {isDragging && (
                 <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary flex items-center justify-center flex-col gap-3 rounded-lg m-2">
-                    <div className="h-16 w-16 bg-primary/20 rounded-full flex items-center justify-center">
-                        <Paperclip className="h-8 w-8 text-primary" />
-                    </div>
+                    <Paperclip className="h-8 w-8 text-primary" />
                     <p className="text-lg font-semibold text-primary">Drop files to send here</p>
                 </div>
             )}
@@ -244,13 +344,17 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
             </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 styled-scrollbar relative z-0" style={{
-                backgroundImage: `radial-gradient(circle at 1px 1px, hsl(var(--muted-foreground) / 0.04) 1px, transparent 0)`,
-                backgroundSize: '24px 24px'
-            }}>
+            <div
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 styled-scrollbar relative z-0"
+                onScroll={handleScroll}
+                style={{
+                    backgroundImage: `radial-gradient(circle at 1px 1px, hsl(var(--muted-foreground) / 0.04) 1px, transparent 0)`,
+                    backgroundSize: '24px 24px'
+                }}
+            >
                 <div className="space-y-1.5 max-w-3xl mx-auto">
                     {messages.map((msg, idx) => {
-                        // Show date separator
                         const showDate = idx === 0 || getDateLabel(msg.timestamp) !== getDateLabel(messages[idx - 1].timestamp);
 
                         return (
@@ -278,10 +382,10 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                                             </span>
                                         )}
 
-                                        {/* Media */}
+                                        {/* Media with lazy loading */}
                                         {msg.type === 'IMAGE' && msg.mediaUrl && (
                                             <div className="relative group/media mb-1.5">
-                                                <img src={msg.mediaUrl} alt="Image" className="rounded-lg max-h-60 object-cover w-full cursor-pointer hover:opacity-95 transition-opacity" />
+                                                <LazyMedia src={msg.mediaUrl} alt="Image" className="w-full" />
                                                 <Button
                                                     size="icon"
                                                     variant="secondary"
@@ -294,7 +398,7 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                                         )}
                                         {msg.type === 'VIDEO' && msg.mediaUrl && (
                                             <div className="relative group/media mb-1.5">
-                                                <video src={msg.mediaUrl} controls className="rounded-lg max-h-60 w-full" />
+                                                <LazyVideo src={msg.mediaUrl} className="w-full" />
                                                 <Button
                                                     size="icon"
                                                     variant="secondary"
@@ -307,20 +411,20 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                                         )}
                                         {msg.type === 'AUDIO' && msg.mediaUrl && (
                                             <div className="flex items-center gap-2 mb-1.5">
-                                                <audio src={msg.mediaUrl} controls className="h-8 max-w-[200px]" />
+                                                <audio src={msg.mediaUrl} controls className="h-8 max-w-[200px]" preload="none" />
                                                 <Button
                                                     size="icon"
                                                     variant="ghost"
                                                     className="h-8 w-8 rounded-full"
                                                     onClick={() => handleDownload(msg.mediaUrl!, `AUDIO-${msg.keyId}.mp3`)}
                                                 >
-                                                    <Download className="h-4 w-4" />
+                                                    <Download className="h-3.5 w-3.5" />
                                                 </Button>
                                             </div>
                                         )}
                                         {msg.type === 'STICKER' && msg.mediaUrl && (
                                             <div className="relative group/media mb-1">
-                                                <img src={msg.mediaUrl} alt="Sticker" className="rounded-lg max-h-32 object-contain" />
+                                                <img src={msg.mediaUrl} alt="Sticker" className="rounded-lg max-h-32 object-contain" loading="lazy" />
                                                 <Button
                                                     size="icon"
                                                     variant="secondary"
@@ -368,7 +472,7 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                             </div>
                         );
                     })}
-                    <div ref={scrollRef} />
+                    <div ref={bottomRef} />
                 </div>
             </div>
 
@@ -426,4 +530,32 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
             </div>
         </div>
     )
+}
+
+function handleDownload(url: string, fileName: string) {
+    try {
+        toast.info("Downloading file...");
+        fetch(url)
+            .then(res => {
+                if (!res.ok) throw new Error("File not found");
+                return res.blob();
+            })
+            .then(blob => {
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+            })
+            .catch(e => {
+                console.error("Download failed", e);
+                toast.error("Download failed! Ensure the file URL is accessible.");
+            });
+    } catch (error) {
+        console.error("Download failed", error);
+        toast.error("Download failed! Ensure the file URL is accessible.");
+    }
 }

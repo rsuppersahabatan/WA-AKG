@@ -116,6 +116,7 @@ model Message {
 
   @@unique([sessionId, keyId])
   @@index([sessionId, remoteJid])
+  @@index([sessionId, remoteJid, timestamp])
 }
 
 model Group {

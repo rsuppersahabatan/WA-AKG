@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,8 +9,8 @@ import { MessageSquarePlus, Search, MessageCircle, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { cn } from "@/lib/utils";
-import { io } from "socket.io-client";
 import { getChatsStatus } from "@/app/dashboard/chat/actions";
+import { useSocket } from "./socket-context";
 
 interface ChatContact {
     jid: string;
@@ -30,102 +30,198 @@ interface ChatListProps {
     selectedJid?: string;
 }
 
+const PAGE_SIZE = 50;
+const VISIBLE_BUFFER = 10; // items to render above/below viewport
+
 export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps) {
     const [chats, setChats] = useState<ChatContact[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const [isNewChatOpen, setIsNewChatOpen] = useState(false);
     const [newChatNumber, setNewChatNumber] = useState("");
-    
-    // Track JIDs in a ref for reliable real-time updates without depending on state closure
-    const jidsInList = useRef<Set<string>>(new Set());
+    const [offset, setOffset] = useState(0);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
 
-    const fetchChats = async () => {
+    const { getSocket, joinSession } = useSocket();
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const searchTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+    // Track visible range for virtual scrolling
+    const [visibleRange, setVisibleRange] = useState({ start: 0, end: PAGE_SIZE });
+    const itemHeights = useRef<Map<number, number>>(new Map());
+    const itemOffsets = useRef<number[]>([]);
+
+    // Fetch initial chats
+    const fetchChats = useCallback(async (loadOffset = 0, append = false) => {
         try {
-            const rawChats = await getChatsStatus(sessionId);
-            
-            // Deduplicate by JID - keep the one with the latest message
+            if (loadOffset === 0) setLoading(true);
+            else setLoadingMore(true);
+
+            const rawChats: any = await getChatsStatus(
+                sessionId,
+                PAGE_SIZE,
+                loadOffset,
+                searchQuery || undefined
+            );
+
             const chatMap = new Map<string, ChatContact>();
-            rawChats.forEach((c: any) => {
+            (rawChats || []).forEach((c: any) => {
                 const existing = chatMap.get(c.jid);
                 if (!existing || (c.lastMessage?.timestamp && (!existing.lastMessage?.timestamp || new Date(c.lastMessage.timestamp) > new Date(existing.lastMessage.timestamp)))) {
                     chatMap.set(c.jid, c);
                 }
             });
-            setChats(Array.from(chatMap.values()));
-        } catch (error) {
-            console.error("Failed to load chats via Server Action", error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
-    useEffect(() => {
-        if (sessionId) {
-            fetchChats();
+            const newChats = Array.from(chatMap.values());
 
-            const socket = io({
-                path: "/api/socket/io",
-                addTrailingSlash: false,
-            });
-
-            socket.on("connect", () => {
-                socket.emit("join-session", sessionId);
-            });
-
-            socket.on("message.update", async (newMessages: any[]) => {
-                let shouldFetchAll = false;
-
-                setChats((prevChats) => {
-                    const updatedChats = [...prevChats];
-                    let needsReorder = false;
-
-                    newMessages.forEach(msg => {
-                        const messageJid = msg.remoteJid;
-                        const chatIndex = updatedChats.findIndex(c => c.jid === messageJid);
-                        
-                        if (chatIndex !== -1) {
-                            updatedChats[chatIndex] = {
-                                ...updatedChats[chatIndex],
-                                lastMessage: {
-                                    content: msg.content,
-                                    timestamp: msg.timestamp,
-                                    type: msg.type
-                                }
-                            };
-                            needsReorder = true;
-                        } else if (!jidsInList.current.has(messageJid)) {
-                            // Message from a JID not in our current list
-                            shouldFetchAll = true;
+            if (append) {
+                setChats(prev => {
+                    const merged = new Map(prev.map(c => [c.jid, c]));
+                    newChats.forEach(c => {
+                        const existing = merged.get(c.jid);
+                        if (!existing || (c.lastMessage?.timestamp && new Date(c.lastMessage.timestamp) > new Date(existing.lastMessage!.timestamp))) {
+                            merged.set(c.jid, c);
                         }
                     });
+                    return Array.from(merged.values());
+                });
+            } else {
+                setChats(newChats);
+            }
 
-                    if (needsReorder) {
-                        updatedChats.sort((a, b) => {
-                            const tA = a.lastMessage?.timestamp ? new Date(a.lastMessage.timestamp).getTime() : 0;
-                            const tB = b.lastMessage?.timestamp ? new Date(b.lastMessage.timestamp).getTime() : 0;
-                            return tB - tA;
-                        });
+            setHasMore(newChats.length >= PAGE_SIZE);
+            setOffset(loadOffset + newChats.length);
+        } catch (error) {
+            console.error("Failed to load chats", error);
+        } finally {
+            setLoading(false);
+            setLoadingMore(false);
+        }
+    }, [sessionId, searchQuery]);
+
+    // Initial load
+    useEffect(() => {
+        setChats([]);
+        setOffset(0);
+        setHasMore(true);
+        fetchChats(0, false);
+    }, [fetchChats]);
+
+    // Socket real-time updates — single connection
+    useEffect(() => {
+        const socket = getSocket();
+        if (!socket) return;
+
+        const onConnect = () => joinSession(sessionId);
+        if (socket.connected) {
+            joinSession(sessionId);
+        }
+        socket.on("connect", onConnect);
+
+        const handler = async (newMessages: any[]) => {
+            let needsReload = false;
+
+            setChats(prev => {
+                const updated = [...prev];
+
+                newMessages.forEach(msg => {
+                    const jid = msg.remoteJid;
+                    const idx = updated.findIndex(c => c.jid === jid);
+
+                    if (idx !== -1) {
+                        updated[idx] = {
+                            ...updated[idx],
+                            lastMessage: {
+                                content: msg.content,
+                                timestamp: msg.timestamp,
+                                type: msg.type
+                            }
+                        };
+                    } else {
+                        // New chat — schedule a reload
+                        needsReload = true;
                     }
-
-                    return updatedChats;
                 });
 
-                if (shouldFetchAll) {
-                    await fetchChats();
-                }
+                updated.sort((a, b) => {
+                    const tA = a.lastMessage?.timestamp ? new Date(a.lastMessage.timestamp).getTime() : 0;
+                    const tB = b.lastMessage?.timestamp ? new Date(b.lastMessage.timestamp).getTime() : 0;
+                    return tB - tA;
+                });
+
+                return updated;
             });
 
-            return () => {
-                socket.disconnect();
-            };
-        }
-    }, [sessionId]);
+            if (needsReload) {
+                fetchChats(0, false);
+            }
+        };
 
-    // Update the JID tracking ref whenever the chats list changes
+        socket.on("message.update", handler);
+
+        return () => {
+            socket.off("connect", onConnect);
+            socket.off("message.update", handler);
+        };
+    }, [sessionId, getSocket, joinSession, fetchChats]);
+
+    // Debounced search
+    const handleSearchChange = (val: string) => {
+        setSearchQuery(val);
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = setTimeout(() => {
+            setOffset(0);
+            fetchChats(0, false);
+        }, 300);
+    };
+
+    // Scroll handler for infinite loading
+    const handleScroll = useCallback(() => {
+        const el = scrollRef.current;
+        if (!el || loadingMore || !hasMore) return;
+
+        if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+            fetchChats(offset, true);
+        }
+    }, [loadingMore, hasMore, fetchChats, offset]);
+
+    // Virtual scrolling: update visible range on scroll
     useEffect(() => {
-        jidsInList.current = new Set(chats.map(c => c.jid));
-    }, [chats]);
+        const el = scrollRef.current;
+        if (!el) return;
+
+        const onScroll = () => {
+            const scrollTop = el!.scrollTop;
+            const viewport = el!.clientHeight;
+
+            // Binary search to find visible range
+            // Simple approach: calculate which items are visible
+            let acc = 0;
+            let startIdx = 0;
+            let endIdx = chats.length;
+
+            for (let i = 0; i < chats.length; i++) {
+                const h = 72; // approximate item height
+                if (acc + h < scrollTop - VISIBLE_BUFFER * h) {
+                    startIdx = i + 1;
+                }
+                if (acc < scrollTop + viewport + VISIBLE_BUFFER * h) {
+                    endIdx = i + 1;
+                }
+                acc += h;
+            }
+
+            setVisibleRange({
+                start: Math.max(0, startIdx - VISIBLE_BUFFER),
+                end: Math.min(chats.length, endIdx + VISIBLE_BUFFER)
+            });
+        };
+
+        el.addEventListener("scroll", onScroll, { passive: true });
+        return () => el.removeEventListener("scroll", onScroll);
+    }, [chats.length]);
 
     // Filter chats based on search query
     const filteredChats = useMemo(() => {
@@ -148,7 +244,7 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
         if (chat.lastMessage.type !== "TEXT") {
             return `📎 ${chat.lastMessage.type.charAt(0) + chat.lastMessage.type.slice(1).toLowerCase()}`;
         }
-        return content.length > 45 ? content.slice(0, 45) + "…" : content;
+        return content.length > 40 ? content.slice(0, 40) + "…" : content;
     };
 
     const getTimeLabel = (timestamp: string): string => {
@@ -194,11 +290,18 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
     }
 
     return (
-        <div className="flex flex-col h-full overflow-hidden">
+        <div className="flex flex-col h-full overflow-hidden" ref={containerRef}>
             {/* Header */}
             <div className="px-3 pt-3 pb-2 space-y-2 flex-shrink-0">
                 <div className="flex justify-between items-center">
-                    <h3 className="font-semibold text-base text-foreground">Chats</h3>
+                    <h3 className="font-semibold text-base text-foreground">
+                        Chats
+                        {chats.length > 0 && (
+                            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                                ({chats.length})
+                            </span>
+                        )}
+                    </h3>
                     <Button
                         variant="ghost"
                         size="icon"
@@ -219,7 +322,7 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
                     <Input
                         placeholder="Search chats..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => handleSearchChange(e.target.value)}
                         className="h-8 pl-8 text-sm bg-muted/50 border-0 rounded-lg focus-visible:ring-1"
                     />
                 </div>
@@ -243,7 +346,11 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
             </div>
 
             {/* Chat List */}
-            <div className="flex-1 overflow-y-auto styled-scrollbar">
+            <div
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto styled-scrollbar will-change-transform"
+                onScroll={handleScroll}
+            >
                 {filteredChats.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
                         <div className="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-3">
@@ -254,47 +361,61 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
                         </p>
                     </div>
                 ) : (
-                    filteredChats.map((chat) => {
-                        const displayName = getContactDisplayName(chat);
-                        const isSelected = selectedJid === chat.jid;
-                        return (
-                            <button
-                                key={chat.jid}
-                                className={cn(
-                                    "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150 border-b border-border/20 overflow-hidden",
-                                    isSelected
-                                        ? "bg-primary/8 border-l-2 border-l-primary"
-                                        : "hover:bg-muted/40 border-l-2 border-l-transparent"
-                                )}
-                                onClick={() => onSelectChat(chat.jid, displayName)}
-                            >
-                                <Avatar className="h-10 w-10 flex-shrink-0">
-                                    <AvatarImage src={chat.profilePic || ""} />
-                                    <AvatarFallback className="text-xs font-medium bg-gradient-to-br from-primary/20 to-blue-500/20 text-primary">
-                                        {displayName.slice(0, 2).toUpperCase()}
-                                    </AvatarFallback>
-                                </Avatar>
-                                <div className="flex-1 min-w-0 overflow-hidden">
-                                    <div className="flex justify-between items-baseline gap-2 overflow-hidden">
-                                        <h4 className={cn(
-                                            "text-sm truncate",
-                                            isSelected ? "font-semibold text-primary" : "font-medium text-foreground"
-                                        )}>
-                                            {displayName}
-                                        </h4>
-                                        {chat.lastMessage && (
-                                            <span className="text-[10px] text-muted-foreground flex-shrink-0">
-                                                {getTimeLabel(chat.lastMessage.timestamp)}
-                                            </span>
-                                        )}
+                    <div className="divide-y divide-border/10">
+                        {filteredChats.slice(visibleRange.start, visibleRange.end).map((chat, i) => {
+                            const displayName = getContactDisplayName(chat);
+                            const isSelected = selectedJid === chat.jid;
+                            const actualIdx = visibleRange.start + i;
+                            return (
+                                <button
+                                    key={chat.jid + (chat.lastMessage?.timestamp || '')}
+                                    className={cn(
+                                        "w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150 border-b border-border/10 overflow-hidden",
+                                        isSelected
+                                            ? "bg-primary/8 border-l-2 border-l-primary"
+                                            : "hover:bg-muted/40 border-l-2 border-l-transparent"
+                                    )}
+                                    onClick={() => onSelectChat(chat.jid, displayName)}
+                                >
+                                    <Avatar className="h-10 w-10 flex-shrink-0">
+                                        <AvatarImage src={chat.profilePic || ""} />
+                                        <AvatarFallback className="text-xs font-medium bg-gradient-to-br from-primary/20 to-blue-500/20 text-primary">
+                                            {displayName.slice(0, 2).toUpperCase()}
+                                        </AvatarFallback>
+                                    </Avatar>
+                                    <div className="flex-1 min-w-0 overflow-hidden">
+                                        <div className="flex justify-between items-baseline gap-2 overflow-hidden">
+                                            <h4 className={cn(
+                                                "text-sm truncate",
+                                                isSelected ? "font-semibold text-primary" : "font-medium text-foreground"
+                                            )}>
+                                                {displayName}
+                                            </h4>
+                                            {chat.lastMessage && (
+                                                <span className="text-[10px] text-muted-foreground flex-shrink-0">
+                                                    {getTimeLabel(chat.lastMessage.timestamp)}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                            {getMessagePreview(chat)}
+                                        </p>
                                     </div>
-                                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                        {getMessagePreview(chat)}
-                                    </p>
-                                </div>
-                            </button>
-                        );
-                    })
+                                </button>
+                            );
+                        })}
+                        {/* Loading indicator */}
+                        {loadingMore && (
+                            <div className="flex items-center justify-center py-4">
+                                <div className="h-5 w-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Bottom sentinel for loading more */}
+                {hasMore && !loadingMore && filteredChats.length > 0 && (
+                    <div className="h-8" />
                 )}
             </div>
         </div>
