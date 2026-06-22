@@ -1,14 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Link from "next/link";
-import { Light as SyntaxHighlighter } from "react-syntax-highlighter";
-import { atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
-import { Menu, X, Search, ChevronRight } from "lucide-react";
+import { Menu, Search, ChevronRight, Copy, Check } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 interface TocItem {
     text: string;
@@ -24,6 +23,22 @@ interface TocSection {
 interface DocsClientProps {
     content: string;
     toc: TocSection[];
+}
+
+function CopyButton({ code }: { code: string }) {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = useCallback(() => {
+        navigator.clipboard.writeText(code).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }).catch(() => toast.error("Copy failed"));
+    }, [code]);
+    return (
+        <button onClick={handleCopy} className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors cursor-pointer">
+            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+            {copied ? "Copied!" : "Copy"}
+        </button>
+    );
 }
 
 export function DocsClient({ content, toc }: DocsClientProps) {
@@ -239,23 +254,19 @@ export function DocsClient({ content, toc }: DocsClientProps) {
                             },
                             code: ({ node, inline, className, children, ...props }: any) => {
                                 const match = /language-(\w+)/.exec(className || '');
+                                const codeStr = String(children).replace(/\n$/, '');
                                 return !inline && match ? (
                                     <div className="rounded-lg overflow-hidden my-6 border border-gray-200 shadow-sm">
-                                        <div className="bg-gray-800 px-4 py-2 flex items-center justify-between">
-                                            <span className="text-xs font-mono text-gray-400 capitalize">{match[1]}</span>
+                                        <div className="bg-gray-100 px-4 py-2 flex items-center justify-between border-b border-gray-200">
+                                            <span className="text-xs font-mono text-gray-500 capitalize">{match[1]}</span>
+                                            <CopyButton code={codeStr} />
                                         </div>
-                                        <SyntaxHighlighter
-                                            style={atomOneDark}
-                                            language={match[1]}
-                                            PreTag="div"
-                                            customStyle={{ margin: 0, padding: '1rem', borderRadius: 0, fontSize: '0.9em' }}
-                                            {...props}
-                                        >
-                                            {String(children).replace(/\n$/, '')}
-                                        </SyntaxHighlighter>
+                                        <pre className="bg-gray-900 text-gray-100 text-sm leading-relaxed overflow-x-auto p-4 m-0">
+                                            <code className="text-sm font-mono">{codeStr}</code>
+                                        </pre>
                                     </div>
                                 ) : (
-                                    <code className="bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200 break-all" {...props}> {/* break-all for inline code */}
+                                    <code className="bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200 break-all" {...props}>
                                         {children}
                                     </code>
                                 )
