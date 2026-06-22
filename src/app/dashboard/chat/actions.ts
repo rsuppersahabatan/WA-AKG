@@ -5,10 +5,12 @@ import { ChatService } from "@/modules/whatsapp/chat.service";
 import { getAuthenticatedUserForAction } from "@/lib/server-action-auth";
 import { canAccessSession } from "@/lib/api-auth";
 
+const CHAT_PAGE_SIZE = parseInt(process.env.NEXT_PUBLIC_CHAT_PAGE_SIZE || "50", 10);
+
 // Fetch chat list with cursor-based pagination & search
 export async function getChatsStatus(
     sessionId: string,
-    limit = 50,
+    limit = CHAT_PAGE_SIZE,
     before?: string,
     search?: string
 ) {

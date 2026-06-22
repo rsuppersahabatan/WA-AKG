@@ -39,7 +39,7 @@ interface ChatListProps {
     selectedJid?: string;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = parseInt(process.env.NEXT_PUBLIC_CHAT_PAGE_SIZE || "50", 10);
 
 function getDisplayName(chat: ChatContact): string {
     return chat.name || chat.notify || chat.jid.split('@')[0];
