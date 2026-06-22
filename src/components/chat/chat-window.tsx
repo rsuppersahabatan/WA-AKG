@@ -5,6 +5,16 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Send, Paperclip, ArrowLeft, FileText, Image as ImageIcon, Music, Video, Download, ArrowDown, CornerUpLeft, Copy, Trash2, Info, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { getChatMessages, sendChatMessage, sendMediaMessage } from "@/app/dashboard/chat/actions";
@@ -156,6 +166,9 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
     const [oldestTimestamp, setOldestTimestamp] = useState<string | null>(null);
     const [autoScroll, setAutoScroll] = useState(true);
     const [newMsgBadge, setNewMsgBadge] = useState(false);
+
+    // Delete confirmation
+    const [deleteConfirmMsg, setDeleteConfirmMsg] = useState<Message | null>(null);
 
     // Reply state
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -326,11 +339,7 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                     onClose={() => setContextMenu(null)}
                     onReply={(msg) => { setReplyingTo(msg); scrollToBottom(true); }}
                     onDelete={(msg) => {
-                        if (confirm("Delete this message?")) {
-                            fetch(`/api/messages/${sessionId}/${jid}/${msg.keyId}`, { method: "DELETE" })
-                                .then(() => { setMessages(p => p.filter(m => m.keyId !== msg.keyId)); toast.success("Deleted"); })
-                                .catch(() => toast.error("Delete failed"));
-                        }
+                        setDeleteConfirmMsg(msg);
                     }}
                 />
             )}
@@ -342,6 +351,31 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                     <p className="text-lg font-semibold text-primary">Drop files here</p>
                 </div>
             )}
+
+            {/* Delete confirmation dialog */}
+            <AlertDialog open={!!deleteConfirmMsg} onOpenChange={(open) => { if (!open) setDeleteConfirmMsg(null); }}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete message?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will delete the message for everyone. This action cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => {
+                                const msg = deleteConfirmMsg;
+                                if (!msg) return;
+                                fetch(`/api/messages/${sessionId}/${jid}/${msg.keyId}`, { method: "DELETE" })
+                                    .then(() => { setMessages(p => p.filter(m => m.keyId !== msg.keyId)); toast.success("Deleted"); })
+                                    .catch(() => toast.error("Delete failed"));
+                                setDeleteConfirmMsg(null);
+                            }}
+                        >Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {/* Loading older indicator */}
             {loadingMore && (
