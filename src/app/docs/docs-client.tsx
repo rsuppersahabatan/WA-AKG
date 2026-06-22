@@ -179,11 +179,11 @@ export function DocsClient({ content, toc }: DocsClientProps) {
             </aside>
 
             {/* Mobile Sidebar (Drawer) */}
-            <div className="lg:hidden fixed bottom-6 right-6 z-50">
+            <div className="lg:hidden fixed bottom-4 right-4 z-50">
                 <Sheet open={openMobileMenu} onOpenChange={setOpenMobileMenu}>
                     <SheetTrigger asChild>
-                        <Button size="icon" className="h-14 w-14 rounded-full shadow-lg shadow-blue-600/20 bg-blue-600 hover:bg-blue-700 text-white transition-transform hover:scale-105 active:scale-95">
-                            <Menu className="h-6 w-6" />
+                        <Button size="icon" className="h-12 w-12 sm:h-14 sm:w-14 rounded-full shadow-lg shadow-blue-600/20 bg-blue-600 hover:bg-blue-700 text-white transition-transform hover:scale-105 active:scale-95">
+                            <Menu className="h-5 w-5 sm:h-6 sm:w-6" />
                         </Button>
                     </SheetTrigger>
                     <SheetContent side="left" className="w-[85vw] sm:w-[400px] p-0 flex flex-col"> {/* Adjusted width for mobile */}
@@ -209,8 +209,8 @@ export function DocsClient({ content, toc }: DocsClientProps) {
             </div>
 
             {/* Main Content */}
-            <main className="flex-1 min-w-0 py-8 lg:pl-12">
-                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-8 rounded-r-lg">
+            <main className="flex-1 min-w-0 py-6 lg:py-8 lg:pl-12 overflow-x-hidden">
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-3 sm:p-4 mb-8 rounded-r-lg">
                     <div className="flex">
                         <div className="flex-shrink-0">
                             <svg className="h-5 w-5 text-blue-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -261,13 +261,13 @@ export function DocsClient({ content, toc }: DocsClientProps) {
                                 )
                             },
                             table: ({ node, ...props }) => (
-                                <div className="overflow-x-auto my-6 border rounded-lg shadow-sm">
-                                    <table {...props} className="min-w-full divide-y divide-gray-200" />
+                        <div className="overflow-x-auto my-6 border rounded-lg shadow-sm">
+                                    <table {...props} className="min-w-full divide-y divide-gray-200 text-sm sm:text-base" />
                                 </div>
                             ),
                             thead: ({ node, ...props }) => <thead {...props} className="bg-gray-50" />,
-                            th: ({ node, ...props }) => <th {...props} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" />,
-                            td: ({ node, ...props }) => <td {...props} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" />,
+                            th: ({ node, ...props }) => <th {...props} className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" />,
+                            td: ({ node, ...props }) => <td {...props} className="px-3 sm:px-4 py-3 text-sm text-gray-500 break-words whitespace-normal" />,
                             pre: ({ node, ...props }) => <pre {...props} /> // Passthrough to code block handler
                         }}
                     >

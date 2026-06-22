@@ -30,6 +30,8 @@ export default async function PublicDocsPage() {
 
     try {
         content = fs.readFileSync(filePath, 'utf8');
+        // Strip extraneous backslash escapes used for markdown brackets
+        content = content.replace(/\\(\[)/g, '$1').replace(/\\(])/g, '$1');
         const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
         version = `v${packageJson.version}`;
     } catch (err) {
@@ -74,7 +76,7 @@ export default async function PublicDocsPage() {
         <div className="min-h-screen bg-gray-50 flex flex-col">
             {/* Header */}
             <header className="bg-white border-b sticky top-0 z-30 shadow-sm/50">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 sm:h-16 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <span className="text-xl font-extrabold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                             WA-AKG
