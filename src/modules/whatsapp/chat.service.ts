@@ -6,17 +6,17 @@ import Sticker from "wa-sticker-formatter";
 export class ChatService {
     /**
      * Get active chats list for a session with last message preview.
-     * Uses single GROUP BY query instead of N+1 findFirst per jid.
-     * Supports pagination & search.
+     * Cursor-based pagination — `before` is ISO timestamp of last seen chat.
+     * Returns chats with last message timestamp < before (older).
      */
     static async getChatsList(
         dbSessionId: string,
         limit = 50,
-        offset = 0,
+        before?: string,
         search?: string
     ) {
-        // 1. Get latest message per remoteJid with pagination directly in SQL
-        // Fast path: only fetch the latest messages for the requested page
+        // 1. Get latest message per remoteJid with cursor pagination
+        // Uses m1.timestamp < before (when provided) to load older chats
         const rawLastMessages = await prisma.$queryRawUnsafe<Array<{
             remoteJid: string;
             content: string | null;
@@ -32,9 +32,12 @@ export class ChatService {
                 GROUP BY remoteJid
             ) m2 ON m1.remoteJid = m2.remoteJid AND m1.timestamp = m2.max_ts
             WHERE m1.sessionId = ?
+            ${before ? 'AND m1.timestamp < ?' : ''}
             ORDER BY m1.timestamp DESC
-            LIMIT ? OFFSET ?
-        `, dbSessionId, dbSessionId, limit, offset);
+            LIMIT ?
+        `, before
+            ? [dbSessionId, dbSessionId, new Date(before), limit]
+            : [dbSessionId, dbSessionId, limit]);
 
         // Fast return if no messages
         if (rawLastMessages.length === 0) return [];
@@ -57,7 +60,7 @@ export class ChatService {
         contacts.forEach(c => infoMap.set(c.jid, { name: c.name, notify: c.notify, profilePic: c.profilePic }));
         groups.forEach(g => infoMap.set(g.jid, { name: g.subject, notify: g.subject, profilePic: null }));
 
-        // 3. Build result array (already sorted by SQL)
+        // 3. Build result array (already sorted by SQL DESC)
         const result: any[] = [];
         for (const msg of rawLastMessages) {
             const info = infoMap.get(msg.remoteJid);
@@ -76,7 +79,7 @@ export class ChatService {
             });
         }
 
-        // 4. Apply in-memory search filter if needed (small set — max `limit` items)
+        // 4. Apply in-memory search filter if needed
         if (search && search.trim()) {
             const q = search.toLowerCase();
             return result.filter(c =>
@@ -144,9 +147,6 @@ export class ChatService {
         };
     }
 
-    /**
-     * Send a text message, optionally with mentions and stickers if formatted as URL.
-     */
     static async sendTextMessage(sessionId: string, jid: string, messagePayload: any, mentions?: string[], quotedMessageId?: string) {
         const instance = waManager.getInstance(sessionId);
         if (!instance || !instance.socket) {

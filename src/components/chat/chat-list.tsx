@@ -263,42 +263,35 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
     const [searchQuery, setSearchQuery] = useState("");
     const [isNewChatOpen, setIsNewChatOpen] = useState(false);
     const [newChatNumber, setNewChatNumber] = useState("");
-    const [offset, setOffset] = useState(0);
     const [hasMore, setHasMore] = useState(true);
     // Label dots per JID — {colorHex}[]
     const [chatLabelMap, setChatLabelMap] = useState<Map<string, {colorHex: string}[]>>(new Map());
 
     const { getSocket, joinSession } = useSocket();
     const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const cursorRef = useRef<string | undefined>(undefined);
+    const chatsRef = useRef<ChatContact[]>(chats);
+    chatsRef.current = chats;
 
-    const fetchChats = useCallback(async (loadOffset = 0, append = false) => {
+    const fetchChats = useCallback(async (cursor?: string, append = false) => {
         try {
-            if (loadOffset === 0) setLoading(true);
-            const rawChats: any = await getChatsStatus(sessionId, PAGE_SIZE, loadOffset, searchQuery || undefined);
-            const chatMap = new Map<string, ChatContact>();
-            (rawChats || []).forEach((c: any) => {
-                const existing = chatMap.get(c.jid);
-                if (!existing || (c.lastMessage?.timestamp && (!existing.lastMessage?.timestamp || new Date(c.lastMessage.timestamp) > new Date(existing.lastMessage.timestamp)))) {
-                    chatMap.set(c.jid, c);
-                }
-            });
-            const newChats = Array.from(chatMap.values());
+            if (!cursor) setLoading(true);
+            const rawChats: any = await getChatsStatus(sessionId, PAGE_SIZE, cursor || undefined, searchQuery || undefined);
             if (append) {
                 setChats(prev => {
                     const merged = new Map(prev.map(c => [c.jid, c]));
-                    newChats.forEach(c => {
+                    (rawChats || []).forEach((c: any) => {
                         const existing = merged.get(c.jid);
-                        if (!existing || (c.lastMessage?.timestamp && new Date(c.lastMessage.timestamp) > new Date(existing.lastMessage!.timestamp))) {
+                        if (!existing || (c.lastMessage?.timestamp && (!existing.lastMessage?.timestamp || new Date(c.lastMessage.timestamp) > new Date(existing.lastMessage.timestamp)))) {
                             merged.set(c.jid, c);
                         }
                     });
                     return Array.from(merged.values());
                 });
             } else {
-                setChats(newChats);
+                setChats(rawChats || []);
             }
-            setHasMore(newChats.length >= PAGE_SIZE);
-            setOffset(loadOffset + newChats.length);
+            setHasMore((rawChats || []).length >= PAGE_SIZE);
         } catch (error) {
             console.error("Failed to load chats", error);
         } finally {
@@ -306,7 +299,7 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
         }
     }, [sessionId, searchQuery]);
 
-    useEffect(() => { setChats([]); setOffset(0); setHasMore(true); fetchChats(0, false); }, [fetchChats]);
+    useEffect(() => { setChats([]); setOffset(0); setHasMore(true); fetchChats(); }, [fetchChats]);
 
     useEffect(() => {
         const socket = getSocket();
@@ -332,7 +325,7 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
                 });
                 return updated;
             });
-            if (needsReload) fetchChats(0, false);
+            if (needsReload) fetchChats();
         };
         socket.on("message.update", handler);
         return () => { socket.off("connect", onConnect); socket.off("message.update", handler); };
@@ -363,7 +356,7 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
     const handleSearchChange = (val: string) => {
         setSearchQuery(val);
         if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-        searchTimerRef.current = setTimeout(() => { setOffset(0); fetchChats(0, false); }, 300);
+        searchTimerRef.current = setTimeout(() => { fetchChats(); }, 300);
     };
 
     const filteredChats = useMemo(() => {
@@ -377,8 +370,12 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
     }, [chats, searchQuery]);
 
     const handleEndReached = useCallback(() => {
-        if (hasMore && !loading && !searchQuery.trim()) fetchChats(offset, true);
-    }, [hasMore, loading, searchQuery, fetchChats, offset]);
+        if (hasMore && !loading && !searchQuery.trim()) {
+            const last = chatsRef.current[chatsRef.current.length - 1];
+            const c = last?.lastMessage?.timestamp;
+            if (c) fetchChats(c, true);
+        }
+    }, [hasMore, loading, searchQuery, fetchChats]);
 
     const itemContent = useCallback(
         (_: number, chat: ChatContact) => <ChatRow chat={chat} isSelected={selectedJid === chat.jid} onSelect={onSelectChat} sessionId={sessionId} labelDots={chatLabelMap.get(chat.jid) || []} />,
