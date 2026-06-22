@@ -236,6 +236,26 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
     };
 
+    // Global keyboard shortcuts
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            // Escape: cancel reply
+            if (e.key === "Escape" && replyingTo) {
+                e.preventDefault();
+                setReplyingTo(null);
+                return;
+            }
+            // ? : show shortcuts
+            if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.shiftKey && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+                toast.success("Shortcuts", {
+                    description: "Enter: Send\nShift+Enter: New line\nEsc: Cancel reply\n?: Show this help"
+                });
+            }
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, [replyingTo]);
+
     const processFileUpload = async (file: File, explicitType?: string) => {
         const formData = new FormData();
         formData.append("file", file);
@@ -483,10 +503,10 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                     <div className="flex-1">
                         {/* Reply preview bar */}
                         {replyingTo && (
-                            <div className="mb-2 flex items-start gap-2 px-2 py-1.5 rounded-lg bg-muted/50 border-l-2 border-amber-500 text-xs animate-in slide-in-from-bottom-1">
-                                <div className="flex-1 min-w-0">
+                            <div className="mb-2 flex items-start gap-2 px-2 py-1.5 rounded-lg bg-muted/50 border-l-2 border-amber-500 text-xs animate-in slide-in-from-bottom-1 overflow-hidden">
+                                <div className="flex-1 min-w-0 overflow-hidden">
                                     <span className="font-semibold text-amber-500 block text-[10px]">Replying to {replyingTo.fromMe ? "you" : (replyingTo.pushName || jid.split('@')[0])}</span>
-                                    <span className="text-muted-foreground truncate block">{replyingTo.content || `[${replyingTo.type}]`}</span>
+                                    <span className="text-muted-foreground truncate block w-full">{replyingTo.content || `[${replyingTo.type}]`}</span>
                                 </div>
                                 <button onClick={() => setReplyingTo(null)} className="p-0.5 text-muted-foreground hover:text-foreground shrink-0"><X className="h-3 w-3" /></button>
                             </div>
