@@ -4763,6 +4763,222 @@ curl -X DELETE "http://localhost:3000/api/webhooks/abc123" \
 
 ---
 
+## 🔐 Webhook HMAC Verification
+
+WA-AKG signs every webhook request with HMAC-SHA256 when you set a `secret` on your webhook. Receiver **must** verify signature before processing payload.
+
+### How It Works
+
+When secret set, WA-AKG sends header:
+
+```
+X-Webhook-Signature: sha256=<hex-encoded-hmac>
+```
+
+Signature = HMAC-SHA256(webhook-secret, raw-request-body).
+
+### Verify Examples
+
+#### Node.js (Express)
+
+```javascript
+import crypto from "crypto";
+
+const WEBHOOK_SECRET = "your-webhook-secret"; // same as set in WA-AKG
+
+app.post("/webhook", express.raw({ type: "application/json" }), (req, res) => {
+  const sig = req.headers["x-webhook-signature"];
+  if (!sig) return res.status(401).send("Missing signature");
+
+  // Extract hash from "sha256=<hex>"
+  const expected = sig.replace("sha256=", "");
+  const actual = crypto
+    .createHmac("sha256", WEBHOOK_SECRET)
+    .update(req.body)
+    .digest("hex");
+
+  if (expected !== actual) {
+    return res.status(401).send("Invalid signature");
+  }
+
+  const payload = JSON.parse(req.body);
+  console.log("Verified webhook:", payload.event);
+  res.sendStatus(200);
+});
+```
+
+#### Node.js (Raw HTTP)
+
+```javascript
+import crypto from "crypto";
+import { createServer } from "http";
+
+const WEBHOOK_SECRET = "your-webhook-secret";
+
+createServer((req, res) => {
+  if (req.method !== "POST") return res.writeHead(405).end();
+
+  let body = "";
+  req.on("data", (chunk) => (body += chunk));
+  req.on("end", () => {
+    const sig = req.headers["x-webhook-signature"];
+    if (!sig) return res.writeHead(401).end("Missing signature");
+
+    const expected = sig.replace("sha256=", "");
+    const actual = crypto
+      .createHmac("sha256", WEBHOOK_SECRET)
+      .update(body)
+      .digest("hex");
+
+    if (expected !== actual) {
+      return res.writeHead(401).end("Invalid signature");
+    }
+
+    const payload = JSON.parse(body);
+    console.log("Verified:", payload.event);
+    res.writeHead(200).end("OK");
+  });
+}).listen(3001);
+```
+
+#### Python (Flask)
+
+```python
+import hmac
+import hashlib
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+WEBHOOK_SECRET = b"your-webhook-secret"  # same as set in WA-AKG
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    sig = request.headers.get("X-Webhook-Signature", "")
+    if not sig:
+        abort(401, "Missing signature")
+
+    expected = sig.replace("sha256=", "")
+    actual = hmac.new(WEBHOOK_SECRET, request.data, hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(expected, actual):
+        abort(401, "Invalid signature")
+
+    payload = request.json
+    print(f"Verified: {payload['event']}")
+    return "OK", 200
+```
+
+#### Python (FastAPI)
+
+```python
+import hmac
+import hashlib
+from fastapi import FastAPI, Request, HTTPException
+
+app = FastAPI()
+WEBHOOK_SECRET = b"your-webhook-secret"
+
+@app.post("/webhook")
+async def webhook(req: Request):
+    sig = req.headers.get("x-webhook-signature", "")
+    if not sig:
+        raise HTTPException(401, "Missing signature")
+
+    body = await req.body()
+    expected = sig.replace("sha256=", "")
+    actual = hmac.new(WEBHOOK_SECRET, body, hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(expected, actual):
+        raise HTTPException(401, "Invalid signature")
+
+    payload = await req.json()
+    print(f"Verified: {payload['event']}")
+    return "OK"
+```
+
+#### PHP
+
+```php
+<?php
+$secret = 'your-webhook-secret';
+$body = file_get_contents('php://input');
+$sig = $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] ?? '';
+
+$expected = str_replace('sha256=', '', $sig);
+$actual = hash_hmac('sha256', $body, $secret);
+
+if (!hash_equals($expected, $actual)) {
+    http_response_code(401);
+    die('Invalid signature');
+}
+
+$payload = json_decode($body);
+error_log('Verified: ' . $payload->event);
+http_response_code(200);
+echo 'OK';
+```
+
+#### Go
+
+```go
+package main
+
+import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "fmt"
+    "io"
+    "net/http"
+    "strings"
+)
+
+var secret = []byte("your-webhook-secret")
+
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    sig := r.Header.Get("X-Webhook-Signature")
+    if sig == "" {
+        http.Error(w, "Missing signature", 401)
+        return
+    }
+
+    body, _ := io.ReadAll(r.Body)
+    expected := strings.TrimPrefix(sig, "sha256=")
+    mac := hmac.New(sha256.New, secret)
+    mac.Write(body)
+    actual := hex.EncodeToString(mac.Sum(nil))
+
+    if !hmac.Equal([]byte(expected), []byte(actual)) {
+        http.Error(w, "Invalid signature", 401)
+        return
+    }
+
+    fmt.Println("Verified webhook")
+    w.WriteHeader(200)
+}
+```
+
+### Testing Your Webhook Receiver
+
+WA-AKG includes built-in webhook test payload. You can also trigger test event manually:
+
+```bash
+# Create webhook with secret
+curl -X POST "http://localhost:3000/api/webhooks/session-01" \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Test HMAC",
+    "url": "https://your-server.com/webhook",
+    "secret": "your-webhook-secret",
+    "events": ["message.received"]
+  }'
+```
+
+Then send a message to a WhatsApp session. Check your server logs — should show verified payload with `X-Webhook-Signature` header.
+
+---
+
 ## 📂 Users
 
 ### \[POST\] /users

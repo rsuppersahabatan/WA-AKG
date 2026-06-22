@@ -281,10 +281,11 @@ WhatsApp uses JID (Jabber ID) format:
 
 1. **Always verify session status** before sending messages
 2. **Use webhooks** instead of polling for real-time updates
-3. **Add delays** between bulk operations to avoid rate limiting
-4. **Store API keys securely** - never commit to version control
-5. **URL-encode JIDs** when using them in URL paths
-6. **Check response status** and handle errors appropriately
+3. **Verify webhook HMAC** — every webhook signed with `X-Webhook-Signature`. See [HMAC Verification Guide](./API_DOCUMENTATION.md#-webhook-hmac-verification)
+4. **Add delays** between bulk operations to avoid rate limiting
+5. **Store API keys securely** - never commit to version control
+6. **URL-encode JIDs** when using them in URL paths
+7. **Check response status** and handle errors appropriately
 
 ---
 
