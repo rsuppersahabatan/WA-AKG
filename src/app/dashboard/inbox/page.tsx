@@ -208,7 +208,7 @@ export default function InboxPage() {
                                                 {n.title}
                                             </h4>
                                             <p className={cn(
-                                                "text-xs mt-0.5 line-clamp-2",
+                                                "text-xs mt-0.5 whitespace-normal break-words",
                                                 n.read ? "text-muted-foreground" : "text-muted-foreground/80"
                                             )}>
                                                 {n.message}

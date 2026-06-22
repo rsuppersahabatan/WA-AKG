@@ -200,7 +200,7 @@ export function Navbar({ appName }: NavbarProps) {
                                                     <p className={`text-sm font-medium leading-none ${!n.read ? 'text-blue-700' : 'text-slate-900'}`}>
                                                         {n.title}
                                                     </p>
-                                                    <p className="text-xs text-muted-foreground line-clamp-2">
+                                                    <p className="text-xs text-muted-foreground whitespace-normal break-words">
                                                         {n.message}
                                                     </p>
                                                     <p className="text-[10px] text-slate-400">
