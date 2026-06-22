@@ -62,7 +62,7 @@ export async function getChatMessages(
 }
 
 // Send a basic text message
-export async function sendChatMessage(sessionId: string, jid: string, text: string) {
+export async function sendChatMessage(sessionId: string, jid: string, text: string, quotedMessageId?: string) {
     const user = await getAuthenticatedUserForAction();
     if (!user) throw new Error("Unauthorized");
 
@@ -70,7 +70,7 @@ export async function sendChatMessage(sessionId: string, jid: string, text: stri
     if (!canAccess) throw new Error("Forbidden");
 
     try {
-        await ChatService.sendTextMessage(sessionId, jid, { text });
+        await ChatService.sendTextMessage(sessionId, jid, { text }, undefined, quotedMessageId);
         return { success: true };
     } catch (error: any) {
         throw new Error(`Failed to send message: ${error.message}`);

@@ -173,10 +173,32 @@ export class ChatService {
     /**
      * Send a text message, optionally with mentions and stickers if formatted as URL.
      */
-    static async sendTextMessage(sessionId: string, jid: string, messagePayload: any, mentions?: string[]) {
+    static async sendTextMessage(sessionId: string, jid: string, messagePayload: any, mentions?: string[], quotedMessageId?: string) {
         const instance = waManager.getInstance(sessionId);
         if (!instance || !instance.socket) {
             throw new Error("WhatsApp session is disconnected or not found");
+        }
+
+        // Handle quoted/reply message
+        if (quotedMessageId) {
+            try {
+                const dbSession = await prisma.session.findUnique({ where: { sessionId }, select: { id: true } });
+                if (dbSession) {
+                    const quotedMsg = await prisma.message.findFirst({
+                        where: { sessionId: dbSession.id, keyId: quotedMessageId },
+                        select: { keyId: true, remoteJid: true, fromMe: true, content: true, timestamp: true }
+                    });
+                    if (quotedMsg && typeof messagePayload === 'object' && !messagePayload.quoted) {
+                        (messagePayload as any).contextInfo = {
+                            stanzaId: quotedMsg.keyId,
+                            participant: quotedMsg.fromMe ? undefined : quotedMsg.remoteJid,
+                            quotedMessage: { conversation: quotedMsg.content || "" }
+                        };
+                    }
+                }
+            } catch (e) {
+                console.error("Error fetching quoted message (non-fatal):", e);
+            }
         }
 
         let msgPayload = { ...messagePayload };
