@@ -374,10 +374,18 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                                     </div>
                                 )}
                                 <div className={cn("flex gap-1 group", msg.fromMe ? "justify-end" : "justify-start")}>
+                                    {/* Reply button: my msg on left */}
+                                    {msg.fromMe && (
+                                        <button onClick={() => { setReplyingTo(msg); scrollToBottom(true); }}
+                                            className="self-center p-1.5 text-muted-foreground/40 hover:text-amber-500 hover:bg-amber-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer shrink-0 order-first"
+                                            title="Reply">
+                                            <CornerUpLeft className="h-3.5 w-3.5" />
+                                        </button>
+                                    )}
                                     <div className={cn(
-                                        "flex flex-col max-w-[85%] sm:max-w-[70%] rounded-2xl px-3 py-2 shadow-sm overflow-hidden",
+                                        "flex flex-col max-w-[85%] sm:max-w-[70%] rounded-2xl px-3 py-2 shadow-sm overflow-hidden cursor-context-menu",
                                         msg.fromMe ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-background border border-border/40 rounded-bl-sm"
-                                    )}>
+                                    )} onContextMenu={(e) => handleContextMenu(e, msg)}>
                                         {!msg.fromMe && jid.endsWith("@g.us") && msg.pushName && (
                                             <span className="text-[10px] font-semibold text-primary block mb-0.5">{msg.pushName}</span>
                                         )}
@@ -430,12 +438,14 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                                             </span>
                                         </div>
                                     </div>
-                                    {/* Reply button on hover */}
-                                    <button onClick={() => { setReplyingTo(msg); scrollToBottom(true); }}
-                                        className="self-center p-1.5 text-muted-foreground/40 hover:text-amber-500 hover:bg-amber-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer shrink-0"
-                                        title="Reply" onContextMenu={(e) => handleContextMenu(e, msg)}>
-                                        <CornerUpLeft className="h-3.5 w-3.5" />
-                                    </button>
+                                    {/* Reply button: other msg on right */}
+                                    {!msg.fromMe && (
+                                        <button onClick={() => { setReplyingTo(msg); scrollToBottom(true); }}
+                                            className="self-center p-1.5 text-muted-foreground/40 hover:text-amber-500 hover:bg-amber-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer shrink-0"
+                                            title="Reply">
+                                            <CornerUpLeft className="h-3.5 w-3.5" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         );

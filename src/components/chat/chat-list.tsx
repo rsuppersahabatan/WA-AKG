@@ -181,9 +181,10 @@ function ChatContextMenu({ state, onClose, sessionId, onSelect }: { state: CtxMe
 
 // ─── Chat Row ──────────────────────
 function ChatRow({
-    chat, isSelected, onSelect, sessionId,
+    chat, isSelected, onSelect, sessionId, labelDots
 }: {
     chat: ChatContact; isSelected: boolean; onSelect: (jid: string, name?: string) => void; sessionId: string;
+    labelDots: { colorHex: string }[];
 }) {
     const displayName = getDisplayName(chat);
     const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
@@ -212,8 +213,16 @@ function ChatRow({
 
                 <div className="flex-1 min-w-0 overflow-hidden cursor-pointer" onClick={() => onSelect(chat.jid, displayName)}>
                     <div className="flex justify-between items-baseline gap-2 overflow-hidden">
-                        <h4 className={cn("text-sm truncate", isSelected ? "font-semibold text-primary" : "font-medium text-foreground")}>
+                        <h4 className={cn("text-sm truncate flex items-center gap-1.5", isSelected ? "font-semibold text-primary" : "font-medium text-foreground")}>
                             {displayName}
+                            {/* Label dots — always visible */}
+                            {labelDots.length > 0 && (
+                                <span className="flex items-center gap-[2px] shrink-0">
+                                    {labelDots.map((d, i) => (
+                                        <span key={i} className="h-2 w-2 rounded-full inline-block" style={{ backgroundColor: d.colorHex }} title={d.colorHex} />
+                                    ))}
+                                </span>
+                            )}
                         </h4>
                         {chat.lastMessage && (
                             <span className="text-[10px] text-muted-foreground flex-shrink-0">{getTimeLabel(chat.lastMessage.timestamp)}</span>
@@ -256,6 +265,8 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
     const [newChatNumber, setNewChatNumber] = useState("");
     const [offset, setOffset] = useState(0);
     const [hasMore, setHasMore] = useState(true);
+    // Label dots per JID — {colorHex}[]
+    const [chatLabelMap, setChatLabelMap] = useState<Map<string, {colorHex: string}[]>>(new Map());
 
     const { getSocket, joinSession } = useSocket();
     const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -327,6 +338,36 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
         return () => { socket.off("connect", onConnect); socket.off("message.update", handler); };
     }, [sessionId, getSocket, joinSession, fetchChats]);
 
+    // Fetch label assignments for all chats
+    useEffect(() => {
+        if (!sessionId) return;
+        (async () => {
+            try {
+                // Get all labels
+                const labelRes = await fetch(`/api/labels/${sessionId}`);
+                const labelData = await labelRes.json();
+                const allLabels: LabelData[] = labelData.data?.labels || [];
+                if (allLabels.length === 0) return;
+
+                // Build map: jid → label colors
+                const map = new Map<string, { colorHex: string }[]>();
+                for (const label of allLabels) {
+                    const res = await fetch(`/api/labels/${sessionId}/chats?labelId=${label.id}`);
+                    if (!res.ok) continue;
+                    const data = await res.json();
+                    for (const cl of (data.data || [])) {
+                        const jid = cl.chatJid;
+                        if (!map.has(jid)) map.set(jid, []);
+                        map.get(jid)!.push({ colorHex: label.colorHex });
+                    }
+                }
+                setChatLabelMap(map);
+            } catch (e) {
+                console.error("Failed to load label assignments", e);
+            }
+        })();
+    }, [sessionId]);
+
     const handleSearchChange = (val: string) => {
         setSearchQuery(val);
         if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -348,8 +389,8 @@ export function ChatList({ sessionId, onSelectChat, selectedJid }: ChatListProps
     }, [hasMore, loading, searchQuery, fetchChats, offset]);
 
     const itemContent = useCallback(
-        (_: number, chat: ChatContact) => <ChatRow chat={chat} isSelected={selectedJid === chat.jid} onSelect={onSelectChat} sessionId={sessionId} />,
-        [selectedJid, onSelectChat, sessionId]
+        (_: number, chat: ChatContact) => <ChatRow chat={chat} isSelected={selectedJid === chat.jid} onSelect={onSelectChat} sessionId={sessionId} labelDots={chatLabelMap.get(chat.jid) || []} />,
+        [selectedJid, onSelectChat, sessionId, chatLabelMap]
     );
 
     const handleStartNewChat = () => {
