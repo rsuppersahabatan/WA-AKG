@@ -50,11 +50,6 @@ export async function GET(
             return NextResponse.json({ status: false, message: "labelId or jid query param is required" }, { status: 400 });
         }
 
-        const canAccess = await canAccessSession(user.id, user.role, sessionId);
-        if (!canAccess) {
-            return NextResponse.json({ status: false, message: "Forbidden" }, { status: 403 });
-        }
-
         // Verify label belongs to session
         const label = await prisma.label.findUnique({
             where: { id: labelId }
