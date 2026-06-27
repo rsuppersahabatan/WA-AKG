@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { normalizeJid } from "@/lib/jid-utils";
 import { waManager } from "@/modules/whatsapp/manager";
+import { onMessageSent } from "@/lib/webhook";
 import Sticker from "wa-sticker-formatter";
 
 export class ChatService {
@@ -316,7 +317,48 @@ export class ChatService {
         if (quotedOption) {
             options.quoted = quotedOption;
         }
-        return await instance.socket.sendMessage(jid, msgPayload, options);
+
+        const sendResult = await instance.socket.sendMessage(jid, msgPayload, options);
+
+        // Fire webhook for sent message (non-blocking)
+        try {
+            const webhookMsg: any = {
+                key: sendResult?.key || sendResult || {},
+                message: {
+                    conversation: typeof msgPayload.text === 'string' ? msgPayload.text : (msgPayload.caption || "")
+                },
+                messageTimestamp: Math.floor(Date.now() / 1000)
+            };
+
+            // Map media types to proper message structure for webhook
+            if (msgPayload.image) {
+                webhookMsg.message = {
+                    imageMessage: { caption: msgPayload.caption || "", mimetype: msgPayload.mimetype || "image/jpeg" }
+                };
+            } else if (msgPayload.video) {
+                webhookMsg.message = {
+                    videoMessage: { caption: msgPayload.caption || "", mimetype: msgPayload.mimetype || "video/mp4" }
+                };
+            } else if (msgPayload.audio) {
+                webhookMsg.message = {
+                    audioMessage: { mimetype: msgPayload.ptt ? "audio/ogg; codecs=opus" : "audio/mp4" }
+                };
+            } else if (msgPayload.document) {
+                webhookMsg.message = {
+                    documentMessage: { caption: msgPayload.caption || "", fileName: msgPayload.fileName || "document", mimetype: msgPayload.mimetype || "application/octet-stream" }
+                };
+            } else if (msgPayload.sticker) {
+                webhookMsg.message = {
+                    stickerMessage: {}
+                };
+            }
+
+            onMessageSent(sessionId, webhookMsg).catch(e => console.error("Webhook error:", e));
+        } catch (e) {
+            // Non-blocking — webhook failure shouldn't break message send
+        }
+
+        return sendResult;
     }
 
     /**
@@ -364,6 +406,36 @@ export class ChatService {
             content = { document: buffer, mimetype, fileName, ...messageOptions };
         }
 
-        return await instance.socket.sendMessage(jid, content);
+        const sendResult = await instance.socket.sendMessage(jid, content);
+
+        // Fire webhook for sent media message (non-blocking)
+        try {
+            const webhookMsg: any = {
+                key: sendResult?.key || sendResult || {},
+                message: {
+                    conversation: caption || ""
+                },
+                messageTimestamp: Math.floor(Date.now() / 1000)
+            };
+
+            // Map media type to proper message structure for webhook
+            if (type === 'image') {
+                webhookMsg.message = { imageMessage: { caption: caption || "", mimetype } };
+            } else if (type === 'video') {
+                webhookMsg.message = { videoMessage: { caption: caption || "", mimetype } };
+            } else if (type === 'audio' || type === 'voice') {
+                webhookMsg.message = { audioMessage: { mimetype: 'audio/mp4', ptt: type === 'voice' } };
+            } else if (type === 'document') {
+                webhookMsg.message = { documentMessage: { caption: caption || "", fileName, mimetype } };
+            } else if (type === 'sticker') {
+                webhookMsg.message = { stickerMessage: {} };
+            }
+
+            onMessageSent(sessionId, webhookMsg).catch(e => console.error("Webhook error:", e));
+        } catch (e) {
+            // Non-blocking
+        }
+
+        return sendResult;
     }
 }
