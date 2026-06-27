@@ -396,6 +396,7 @@ export async function onMessageSent(sessionId: string, message: any, existingFil
 
         // Simplified Fields — always @s.whatsapp.net format
         from: normalizedFrom,       // Chat ID (normalized)
+        receiver: normalizedFrom,   // Receiver JID (explicit — same as from for sent messages)
         sender: sender,             // "ME" or normalized JID
         isGroup: isGroup,           // Boolean
         chatType: getChatType(remoteJid), // PERSONAL | GROUP | STATUS | NEWSLETTER
@@ -409,6 +410,41 @@ export async function onMessageSent(sessionId: string, message: any, existingFil
         timestamp: Date.now(),
         raw: message
     });
+}
+
+/**
+ * Helper to fire message.sent webhook after any sendMessage call
+ * Constructs minimal WAMessage-like object from send result + payload info
+ */
+export async function fireSentWebhook(
+    sessionId: string,
+    jid: string,
+    payload: { type?: string; text?: string; caption?: string; fileName?: string; mimetype?: string; ptt?: boolean },
+    sendResult: { id: string; remoteJid?: string; fromMe?: boolean }
+) {
+    try {
+        const webhookMsg: any = {
+            key: { ...sendResult, remoteJid: sendResult.remoteJid || jid, fromMe: true },
+            message: { conversation: payload.text || payload.caption || "" },
+            messageTimestamp: Math.floor(Date.now() / 1000)
+        };
+
+        if (payload.type === 'image') {
+            webhookMsg.message = { imageMessage: { caption: payload.caption || "", mimetype: payload.mimetype || "image/jpeg" } };
+        } else if (payload.type === 'video') {
+            webhookMsg.message = { videoMessage: { caption: payload.caption || "", mimetype: payload.mimetype || "video/mp4" } };
+        } else if (payload.type === 'audio' || payload.type === 'voice') {
+            webhookMsg.message = { audioMessage: { mimetype: payload.mimetype || 'audio/mp4', ptt: payload.type === 'voice' } };
+        } else if (payload.type === 'document') {
+            webhookMsg.message = { documentMessage: { caption: payload.caption || "", fileName: payload.fileName || "document", mimetype: payload.mimetype || "application/octet-stream" } };
+        } else if (payload.type === 'sticker') {
+            webhookMsg.message = { stickerMessage: {} };
+        }
+
+        await onMessageSent(sessionId, webhookMsg);
+    } catch (e) {
+        // Non-blocking
+    }
 }
 
 /**
