@@ -1,8 +1,9 @@
-// DEBUG: Test send interactive list message via raw protobuf
+// DEBUG: Test interactive messages — multiple format approaches
 import { NextResponse, NextRequest } from "next/server";
 import { waManager } from "@/modules/whatsapp/manager";
 import { getAuthenticatedUser, canAccessSession } from "@/lib/api-auth";
-import { generateWAMessageFromContent, proto } from "@whiskeysockets/baileys";
+import { generateWAMessageFromContent } from "@whiskeysockets/baileys";
+import crypto from "crypto";
 
 export async function POST(
     request: NextRequest,
@@ -21,136 +22,97 @@ export async function POST(
 
         const body = await request.json();
         const jid = decodeURIComponent(body.jid || "");
-        const mode = body.mode || "list"; // "list" | "button" | "interactive"
-
+        const mode = body.mode || "list";
         if (!jid) return NextResponse.json({ status: false, message: "jid required" }, { status: 400 });
 
-        let result: any;
+        const secret = crypto.randomBytes(32);
+        const userJid = instance.socket.user?.id || "";
+        let fullMsg: any;
 
         if (mode === "list") {
-            // Test 1: Native list message via raw protobuf
-            const listMsg = {
+            // Old format: ListMessage + messageContextInfo
+            fullMsg = generateWAMessageFromContent(jid, {
                 listMessage: {
                     title: "Pilih Menu",
-                    description: "Silakan pilih salah satu:",
+                    description: "Silakan pilih:",
                     buttonText: "Lihat Menu",
-                    listType: 1, // SINGLE_SELECT
+                    listType: 1,
+                    footerText: "WA-AKG",
                     sections: [
-                        {
-                            title: "Makanan",
-                            rows: [
-                                { title: "Nasi Goreng", description: "Rp 15.000", rowId: "nasi_goreng" },
-                                { title: "Mie Ayam", description: "Rp 12.000", rowId: "mie_ayam" },
-                                { title: "Bakso", description: "Rp 10.000", rowId: "bakso" },
-                            ]
-                        },
-                        {
-                            title: "Minuman",
-                            rows: [
-                                { title: "Es Teh", description: "Rp 5.000", rowId: "es_teh" },
-                                { title: "Jus Jeruk", description: "Rp 8.000", rowId: "jus_jeruk" },
-                            ]
-                        }
+                        { title: "Makanan", rows: [
+                            { title: "Nasi Goreng", description: "Rp 15.000", rowId: "nasi_goreng" },
+                            { title: "Mie Ayam", description: "Rp 12.000", rowId: "mie_ayam" },
+                        ]}
                     ]
-                }
-            };
-
-            const fullMsg = generateWAMessageFromContent(jid, listMsg, {
-                userJid: instance.socket.user?.id || "",
-                timestamp: new Date()
-            });
-
-            // @ts-ignore — relayMessage internal tapi available di socket
-            await instance.socket.relayMessage(jid, fullMsg.message, {
-                messageId: fullMsg.key.id
-            });
-
-            result = { mode: "list", messageId: fullMsg.key.id };
+                },
+                messageContextInfo: { messageSecret: secret }
+            }, { userJid, timestamp: new Date() });
+            await (instance.socket as any).relayMessage(jid, fullMsg.message, { messageId: fullMsg.key.id });
         }
         else if (mode === "button") {
-            // Test 2: Native button message via raw protobuf
-            const btnMsg = {
+            // Old format: ButtonsMessage + messageContextInfo
+            fullMsg = generateWAMessageFromContent(jid, {
                 buttonsMessage: {
                     contentText: "Pilih salah satu:",
-                    footerText: "Dibuat oleh WA-AKG",
-                    headerType: 2, // TEXT
+                    footerText: "WA-AKG",
+                    headerType: 2,
                     buttons: [
-                        {
-                            buttonId: "btn_yes",
-                            buttonText: { displayText: "Ya" },
-                            type: 1 // RESPONSE
-                        },
-                        {
-                            buttonId: "btn_no",
-                            buttonText: { displayText: "Tidak" },
-                            type: 1
-                        },
-                        {
-                            buttonId: "btn_maybe",
-                            buttonText: { displayText: "Nanti" },
-                            type: 1
-                        }
+                        { buttonId: "yes", buttonText: { displayText: "Ya" }, type: 1 },
+                        { buttonId: "no", buttonText: { displayText: "Tidak" }, type: 1 },
                     ]
-                }
-            };
-
-            const fullMsg = generateWAMessageFromContent(jid, btnMsg, {
-                userJid: instance.socket.user?.id || "",
-                timestamp: new Date()
-            });
-
-            // @ts-ignore
-            await instance.socket.relayMessage(jid, fullMsg.message, {
-                messageId: fullMsg.key.id
-            });
-
-            result = { mode: "button", messageId: fullMsg.key.id };
+                },
+                messageContextInfo: { messageSecret: secret }
+            }, { userJid, timestamp: new Date() });
+            await (instance.socket as any).relayMessage(jid, fullMsg.message, { messageId: fullMsg.key.id });
         }
-        else if (mode === "interactive") {
-            // Test 3: Interactive message (newer WhatsApp format)
-            const interactiveMsg = {
+        else if (mode === "list-v2") {
+            // New format: InteractiveMessage + nativeFlow single_select
+            fullMsg = generateWAMessageFromContent(jid, {
                 interactiveMessage: {
-                    body: { text: "Pilih opsi dibawah:" },
-                    footer: { text: "WA-AKG Interactive" },
-                    header: { title: "Menu Interaktif" },
+                    body: { text: "Silakan pilih menu:" },
+                    footer: { text: "WA-AKG" },
+                    header: { title: "Menu Makanan" },
+                    nativeFlowMessage: {
+                        buttons: [{
+                            name: "single_select",
+                            buttonParamsJson: JSON.stringify({
+                                title: "Pilih Menu",
+                                sections: [
+                                    { title: "Makanan", rows: [
+                                        { title: "Nasi Goreng", description: "Rp 15.000", id: "nasi_goreng" },
+                                        { title: "Mie Ayam", description: "Rp 12.000", id: "mie_ayam" },
+                                    ]}
+                                ]
+                            })
+                        }]
+                    }
+                },
+                messageContextInfo: { messageSecret: secret }
+            }, { userJid, timestamp: new Date() });
+            await (instance.socket as any).relayMessage(jid, fullMsg.message, { messageId: fullMsg.key.id });
+        }
+        else if (mode === "btn-v2") {
+            // New format: InteractiveMessage + nativeFlow quick_reply
+            fullMsg = generateWAMessageFromContent(jid, {
+                interactiveMessage: {
+                    body: { text: "Pilih salah satu:" },
+                    footer: { text: "WA-AKG" },
                     nativeFlowMessage: {
                         buttons: [
-                            {
-                                name: "quick_reply",
-                                buttonParamsJson: JSON.stringify({
-                                    display_text: "Lihat Menu",
-                                    id: "lihat_menu"
-                                })
-                            },
-                            {
-                                name: "quick_reply",
-                                buttonParamsJson: JSON.stringify({
-                                    display_text: "Hubungi Admin",
-                                    id: "hubungi_admin"
-                                })
-                            }
+                            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Ya", id: "yes" }) },
+                            { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "Tidak", id: "no" }) },
                         ]
                     }
-                }
-            };
-
-            const fullMsg = generateWAMessageFromContent(jid, interactiveMsg, {
-                userJid: instance.socket.user?.id || "",
-                timestamp: new Date()
-            });
-
-            // @ts-ignore
-            await instance.socket.relayMessage(jid, fullMsg.message, {
-                messageId: fullMsg.key.id
-            });
-
-            result = { mode: "interactive", messageId: fullMsg.key.id };
+                },
+                messageContextInfo: { messageSecret: secret }
+            }, { userJid, timestamp: new Date() });
+            await (instance.socket as any).relayMessage(jid, fullMsg.message, { messageId: fullMsg.key.id });
         }
         else {
-            return NextResponse.json({ status: false, message: "Unknown mode: list|button|interactive" }, { status: 400 });
+            return NextResponse.json({ status: false, message: "Unknown mode: list|button|list-v2|btn-v2" }, { status: 400 });
         }
 
-        return NextResponse.json({ status: true, message: "Sent", data: result });
+        return NextResponse.json({ status: true, message: "Sent", data: { mode, messageId: fullMsg.key.id } });
 
     } catch (error: any) {
         console.error("Interactive test error:", error);
