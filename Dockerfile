@@ -15,16 +15,22 @@ RUN npm run build
 
 # Production image
 FROM node:20-alpine AS runner
+RUN apk add --no-cache openssl ca-certificates
+
 WORKDIR /app
 
-# Copy production files
-COPY package*.json ./
-COPY node_modules ./node_modules
-COPY .next ./.next
-COPY src ./src
-COPY prisma ./prisma
-COPY public ./public
-COPY tsconfig.json ./
+# Copy production files DARI TAHAP BUILDER (--from=builder)
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/tsconfig.json ./
+
+# Saya juga menyarankan menambahkan folder scripts karena 
+# di CMD bawahnya Anda menggunakan "node scripts/setup-admin.js"
+COPY --from=builder /app/scripts ./scripts 
 
 ENV NODE_ENV=production
 ENV PORT=3000
