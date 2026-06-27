@@ -240,7 +240,7 @@ export function DocsClient({ content, toc }: DocsClientProps) {
                     </div>
                 </div>
 
-                <article className="prose prose-slate prose-blue max-w-none prose-headings:scroll-mt-24 prose-pre:p-0 prose-pre:bg-transparent prose-pre:border-none break-words"> {/* Added break-words */}
+                <article className="prose prose-slate prose-blue max-w-none prose-headings:scroll-mt-24 break-words"> {/* Added break-words */}
                     <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
