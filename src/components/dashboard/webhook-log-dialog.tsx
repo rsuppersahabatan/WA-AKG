@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
     History, 
     Loader2, 
@@ -180,7 +179,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
 
     return (
         <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-            <DialogContent className="max-w-5xl w-[95vw] h-[85vh] flex flex-col p-0 overflow-hidden gap-0">
+            <DialogContent className="max-w-6xl sm:max-w-6xl w-[96vw] h-[90vh] flex flex-col p-0 overflow-hidden gap-0">
                 <DialogHeader className="p-4 sm:p-6 border-b shrink-0 flex flex-row items-center justify-between">
                     <div className="space-y-1">
                         <DialogTitle className="flex items-center gap-2 text-lg font-bold">
@@ -242,71 +241,69 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                 </div>
                             </div>
 
-                            {/* Scroll Area */}
-                            <ScrollArea className="flex-1 min-h-0">
-                                <div className="divide-y divide-slate-100">
-                                    {logs.map((log) => {
-                                        const isSelected = log.id === selectedLogId;
-                                        const isSuccess = log.status === "SUCCESS";
-                                        const isStatusError = log.responseStatusCode && log.responseStatusCode >= 400;
+                            {/* Scroll Container */}
+                            <div className="flex-1 overflow-y-auto min-h-0 divide-y divide-slate-100">
+                                {logs.map((log) => {
+                                    const isSelected = log.id === selectedLogId;
+                                    const isSuccess = log.status === "SUCCESS";
+                                    const isStatusError = log.responseStatusCode && log.responseStatusCode >= 400;
 
-                                        return (
-                                            <button
-                                                key={log.id}
-                                                onClick={() => {
-                                                    setSelectedLogId(log.id);
-                                                    setShowMobileDetails(true);
-                                                }}
-                                                className={cn(
-                                                    "w-full text-left p-3 flex flex-col gap-1 transition-all",
-                                                    isSelected 
-                                                        ? "bg-slate-100/80 border-l-2 border-primary" 
-                                                        : "hover:bg-slate-50/50 border-l-2 border-transparent"
+                                    return (
+                                        <button
+                                            key={log.id}
+                                            onClick={() => {
+                                                setSelectedLogId(log.id);
+                                                setShowMobileDetails(true);
+                                            }}
+                                            className={cn(
+                                                "w-full text-left p-3.5 flex flex-col gap-1 transition-all",
+                                                isSelected 
+                                                    ? "bg-slate-100/80 border-l-2 border-primary" 
+                                                    : "hover:bg-slate-50/50 border-l-2 border-transparent"
+                                            )}
+                                        >
+                                            <div className="flex items-center justify-between gap-2 w-full">
+                                                <span className="font-mono text-[11px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 border text-slate-800 truncate max-w-[120px] lg:max-w-[160px]">
+                                                    {log.event}
+                                                </span>
+                                                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                                    {formatTimeOnly(log.createdAt)}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex items-center gap-2 mt-1.5">
+                                                <Badge
+                                                    variant={isSuccess ? "default" : "destructive"}
+                                                    className={cn(
+                                                        "text-[9px] px-1.5 py-0 font-medium tracking-wide uppercase",
+                                                        isSuccess ? "bg-emerald-600 hover:bg-emerald-600 text-white" : ""
+                                                    )}
+                                                >
+                                                    {isSuccess ? "Success" : "Failed"}
+                                                </Badge>
+
+                                                {log.responseStatusCode != null && (
+                                                    <span className={cn(
+                                                        "text-[11px] font-mono font-bold",
+                                                        isStatusError ? "text-red-500" : "text-emerald-600"
+                                                    )}>
+                                                        {log.responseStatusCode}
+                                                    </span>
                                                 )}
-                                            >
-                                                <div className="flex items-center justify-between gap-2 w-full">
-                                                    <span className="font-mono text-[11px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 border text-slate-800 truncate max-w-[120px] lg:max-w-[160px]">
-                                                        {log.event}
+
+                                                {log.responseTimeMs != null && (
+                                                    <span className="text-[10px] text-muted-foreground font-mono">
+                                                        {log.responseTimeMs}ms
                                                     </span>
-                                                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                                        {formatTimeOnly(log.createdAt)}
-                                                    </span>
-                                                </div>
+                                                )}
+                                            </div>
 
-                                                <div className="flex items-center gap-2 mt-1.5">
-                                                    <Badge
-                                                        variant={isSuccess ? "default" : "destructive"}
-                                                        className={cn(
-                                                            "text-[9px] px-1.5 py-0 font-medium tracking-wide uppercase",
-                                                            isSuccess ? "bg-emerald-600 hover:bg-emerald-600 text-white" : ""
-                                                        )}
-                                                    >
-                                                        {isSuccess ? "Success" : "Failed"}
-                                                    </Badge>
-
-                                                    {log.responseStatusCode != null && (
-                                                        <span className={cn(
-                                                            "text-[11px] font-mono font-bold",
-                                                            isStatusError ? "text-red-500" : "text-emerald-600"
-                                                        )}>
-                                                            {log.responseStatusCode}
-                                                        </span>
-                                                    )}
-
-                                                    {log.responseTimeMs != null && (
-                                                        <span className="text-[10px] text-muted-foreground font-mono">
-                                                            {log.responseTimeMs}ms
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                <div className="text-[10px] font-mono text-muted-foreground truncate w-full mt-1 opacity-70">
-                                                    {log.requestUrl}
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                                            <div className="text-[10px] font-mono text-muted-foreground truncate w-full mt-1 opacity-70">
+                                                {log.requestUrl}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
 
                                 {/* Load more */}
                                 {hasMore ? (
@@ -331,7 +328,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                         Showing all {total} logs
                                     </div>
                                 ) : null}
-                            </ScrollArea>
+                            </div>
                         </div>
 
                         {/* Right Column: Log Details */}
@@ -475,7 +472,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
 
                                         {/* Tab contents */}
                                         <div className="flex-1 min-h-0 bg-slate-950 text-slate-100 rounded-lg overflow-hidden relative flex flex-col">
-                                            <ScrollArea className="flex-1 p-4">
+                                            <div className="flex-1 overflow-auto p-4 select-text">
                                                 {activeTab === "payload" && (
                                                     <div className="space-y-2">
                                                         <div className="flex items-center justify-between">
@@ -495,7 +492,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                                                 Copy
                                                             </Button>
                                                         </div>
-                                                        <pre className="font-mono text-xs text-slate-200 overflow-x-auto leading-relaxed select-text py-2">
+                                                        <pre className="font-mono text-xs text-slate-200 leading-relaxed select-text py-2 whitespace-pre-wrap break-all">
                                                             {selectedLog.requestBody 
                                                                 ? formatJson(selectedLog.requestBody) 
                                                                 : "{}"}
@@ -524,7 +521,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                                                 </Button>
                                                             )}
                                                         </div>
-                                                        <pre className="font-mono text-xs text-slate-200 overflow-x-auto leading-relaxed select-text py-2 break-all whitespace-pre-wrap">
+                                                        <pre className="font-mono text-xs text-slate-200 leading-relaxed select-text py-2 break-all whitespace-pre-wrap">
                                                             {selectedLog.responseBody 
                                                                 ? selectedLog.responseBody 
                                                                 : "No response body returned from server."}
@@ -553,14 +550,14 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                                                 </Button>
                                                             )}
                                                         </div>
-                                                        <pre className="font-mono text-xs text-slate-200 overflow-x-auto leading-relaxed select-text py-2">
+                                                        <pre className="font-mono text-xs text-slate-200 leading-relaxed select-text py-2 whitespace-pre-wrap break-all">
                                                             {selectedLog.requestHeaders 
                                                                 ? formatJson(selectedLog.requestHeaders) 
                                                                 : "{}"}
                                                         </pre>
                                                     </div>
                                                 )}
-                                            </ScrollArea>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
