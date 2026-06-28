@@ -40,10 +40,9 @@ export async function PUT(
         const existing = await prisma.webhook.findFirst({
             where: {
                 id,
-                userId: user.id,
                 OR: [
                     { sessionId: session.id },
-                    { sessionId: null }
+                    { sessionId: null, userId: user.id }
                 ]
             }
         });
@@ -104,10 +103,9 @@ export async function DELETE(
         const existing = await prisma.webhook.findFirst({
             where: {
                 id,
-                userId: user.id,
                 OR: [
                     { sessionId: session.id },
-                    { sessionId: null }
+                    { sessionId: null, userId: user.id }
                 ]
             }
         });
