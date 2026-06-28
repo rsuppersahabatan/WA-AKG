@@ -213,7 +213,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                     <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
                         {/* Left Column: Logs List */}
                         <div className={cn(
-                            "w-full md:w-[320px] lg:w-[360px] xl:w-[380px] border-r border-slate-100 flex flex-col min-h-0 bg-slate-50/30",
+                            "w-full md:w-[280px] lg:w-[320px] xl:w-[340px] border-r border-slate-100 flex flex-col min-h-0 bg-slate-50/30 shrink-0",
                             showMobileDetails ? "hidden md:flex" : "flex"
                         )}>
                             {/* Logs List Subheader */}
@@ -430,12 +430,12 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                     )}
 
                                     {/* Tabs */}
-                                    <div className="flex-1 flex flex-col min-h-0 p-4">
-                                        <div className="flex border-b mb-3 gap-1 shrink-0">
+                                    <div className="flex-1 flex flex-col min-h-0">
+                                        <div className="flex border-b gap-1 shrink-0 px-4 pt-2 bg-slate-50/50">
                                             <button
                                                 onClick={() => setActiveTab("payload")}
                                                 className={cn(
-                                                    "px-3 py-1.5 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5",
+                                                    "px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-all flex items-center gap-1.5",
                                                     activeTab === "payload"
                                                         ? "border-primary text-primary font-bold"
                                                         : "border-transparent text-muted-foreground hover:text-foreground"
@@ -447,7 +447,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                             <button
                                                 onClick={() => setActiveTab("response")}
                                                 className={cn(
-                                                    "px-3 py-1.5 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5",
+                                                    "px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-all flex items-center gap-1.5",
                                                     activeTab === "response"
                                                         ? "border-primary text-primary font-bold"
                                                         : "border-transparent text-muted-foreground hover:text-foreground"
@@ -459,7 +459,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                             <button
                                                 onClick={() => setActiveTab("headers")}
                                                 className={cn(
-                                                    "px-3 py-1.5 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5",
+                                                    "px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-all flex items-center gap-1.5",
                                                     activeTab === "headers"
                                                         ? "border-primary text-primary font-bold"
                                                         : "border-transparent text-muted-foreground hover:text-foreground"
@@ -470,9 +470,9 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                             </button>
                                         </div>
 
-                                        {/* Tab contents */}
-                                        <div className="flex-1 min-h-0 bg-slate-950 text-slate-100 rounded-lg overflow-hidden relative flex flex-col">
-                                            <div className="flex-1 overflow-auto p-4 select-text">
+                                        {/* Tab contents - Full bleed */}
+                                        <div className="flex-1 min-h-0 bg-slate-950 text-slate-100 relative flex flex-col">
+                                            <div className="flex-1 overflow-auto p-5 select-text">
                                                 {activeTab === "payload" && (
                                                     <div className="space-y-2">
                                                         <div className="flex items-center justify-between">
