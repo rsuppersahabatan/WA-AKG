@@ -166,6 +166,7 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
     const bottomRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
     const [uploadType, setUploadType] = useState<string>("image");
     const [isDragging, setIsDragging] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -205,6 +206,16 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
     }, [sessionId, jid]);
 
     useEffect(() => { setMessages([]); setOldestTimestamp(null); setHasMore(false); fetchMessages(); }, [fetchMessages]);
+
+    // Auto focus input when chat changes and finished loading
+    useEffect(() => {
+        if (!loading && inputRef.current) {
+            // A tiny delay ensures React has fully flushed the DOM for the new chat
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 10);
+        }
+    }, [jid, loading]);
 
     // Socket real-time
     useEffect(() => {
@@ -321,13 +332,7 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
 
     const displayName = name || jid.split('@')[0];
 
-    if (loading) {
-        return (
-            <div className="flex-1 flex items-center justify-center bg-muted/20 min-w-0 min-h-0">
-                <div className="h-6 w-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-            </div>
-        );
-    }
+    // Loading is now handled gracefully inside the message list to prevent unmounting the layout
 
     return (
         <div
@@ -416,6 +421,11 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                 style={{ backgroundImage: `radial-gradient(circle at 1px 1px, hsl(var(--muted-foreground) / 0.04) 1px, transparent 0)`, backgroundSize: '24px 24px' }}
             >
                 <div className="flex flex-col gap-3 max-w-3xl mx-auto">
+                    {loading && messages.length === 0 && (
+                        <div className="flex-1 flex items-center justify-center py-32">
+                            <div className="h-6 w-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                        </div>
+                    )}
                     {!hasMore && messages.length > 0 && (
                         <div className="text-center py-4">
                             <span className="text-[10px] font-medium text-muted-foreground bg-background/80 px-3 py-1 rounded-full border border-border/30">Beginning of conversation</span>
@@ -584,7 +594,7 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
                             </div>
                         )}
                         <div className="flex items-end gap-2 p-1 rounded-2xl border border-border/30 bg-background">
-                            <textarea value={input} onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }}
+                            <textarea ref={inputRef} value={input} onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 120) + "px"; }}
                                 onKeyDown={handleKeyDown} placeholder="Type a message..." rows={1} style={{ minHeight: "36px", maxHeight: "120px" }}
                                 className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-foreground placeholder-muted-foreground focus:outline-none leading-normal" />
                         </div>
