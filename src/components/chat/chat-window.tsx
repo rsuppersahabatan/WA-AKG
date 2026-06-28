@@ -207,12 +207,14 @@ export function ChatWindow({ sessionId, jid, name, onBack }: ChatWindowProps) {
 
     useEffect(() => { setMessages([]); setOldestTimestamp(null); setHasMore(false); fetchMessages(); }, [fetchMessages]);
 
-    // Auto focus input when chat changes
+    // Auto focus input when chat changes and finished loading
     useEffect(() => {
-        if (inputRef.current) {
-            inputRef.current.focus();
+        if (!loading && inputRef.current) {
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 10);
         }
-    }, [jid]);
+    }, [jid, loading]);
 
     // Socket real-time
     useEffect(() => {

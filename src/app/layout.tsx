@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { TopLoader } from "@/components/ui/top-loader";
+import { prisma } from "@/lib/prisma";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,8 +15,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const APP_NAME = "WA-AKG";
-const APP_DEFAULT_TITLE = "WA-AKG | Premium WhatsApp Gateway";
 const APP_DESCRIPTION = "Self-hosted WhatsApp Gateway with Multi-device support, Auto-replies, API integration, and session management dashboard.";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://wa-akg.app";
 
@@ -28,56 +27,69 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export const metadata: Metadata = {
-  metadataBase: new URL(APP_URL),
-  title: {
-    default: APP_DEFAULT_TITLE,
-    template: `%s | ${APP_NAME}`,
-  },
-  description: APP_DESCRIPTION,
-  applicationName: APP_NAME,
-  generator: "Next.js",
-  keywords: [
-    "whatsapp gateway", "whatsapp api", "whatsapp bot", "whatsapp management",
-    "self-hosted", "wa gateway", "whatsapp multi-device", "auto-reply",
-    "whatsapp dashboard", "whatsapp web api"
-  ],
-  referrer: "origin-when-cross-origin",
-  authors: [{ name: "WA-AKG" }],
-  creator: "WA-AKG",
-  publisher: "WA-AKG",
-  formatDetection: { telephone: false },
-  robots: {
-    index: process.env.NEXT_PUBLIC_ALLOW_INDEXING === "true",
-    follow: process.env.NEXT_PUBLIC_ALLOW_INDEXING === "true",
-    googleBot: {
+export async function generateMetadata(): Promise<Metadata> {
+  let appName = "WA-AKG";
+  try {
+    // @ts-ignore
+    const config = await prisma.systemConfig.findUnique({ where: { id: "default" } });
+    if (config?.appName) appName = config.appName;
+  } catch (e) {
+    console.error("Failed to fetch system config for metadata:", e);
+  }
+
+  const appDefaultTitle = `${appName} | Premium WhatsApp Gateway`;
+
+  return {
+    metadataBase: new URL(APP_URL),
+    title: {
+      default: appDefaultTitle,
+      template: `%s | ${appName}`,
+    },
+    description: APP_DESCRIPTION,
+    applicationName: appName,
+    generator: "Next.js",
+    keywords: [
+      "whatsapp gateway", "whatsapp api", "whatsapp bot", "whatsapp management",
+      "self-hosted", "wa gateway", "whatsapp multi-device", "auto-reply",
+      "whatsapp dashboard", "whatsapp web api"
+    ],
+    referrer: "origin-when-cross-origin",
+    authors: [{ name: appName }],
+    creator: appName,
+    publisher: appName,
+    formatDetection: { telephone: false },
+    robots: {
       index: process.env.NEXT_PUBLIC_ALLOW_INDEXING === "true",
       follow: process.env.NEXT_PUBLIC_ALLOW_INDEXING === "true",
-      "max-video-preview": -1,
-      "max-image-preview": "large",
-      "max-snippet": -1,
+      googleBot: {
+        index: process.env.NEXT_PUBLIC_ALLOW_INDEXING === "true",
+        follow: process.env.NEXT_PUBLIC_ALLOW_INDEXING === "true",
+        "max-video-preview": -1,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+      },
     },
-  },
-  openGraph: {
-    type: "website",
-    locale: "en_US",
-    siteName: APP_NAME,
-    title: APP_DEFAULT_TITLE,
-    description: APP_DESCRIPTION,
-    url: APP_URL,
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: APP_DEFAULT_TITLE,
-    description: APP_DESCRIPTION,
-  },
-  other: {
-    "mobile-web-app-capable": "yes",
-    "apple-mobile-web-app-capable": "yes",
-    "apple-mobile-web-app-status-bar-style": "default",
-    "apple-mobile-web-app-title": APP_NAME,
-  },
-};
+    openGraph: {
+      type: "website",
+      locale: "en_US",
+      siteName: appName,
+      title: appDefaultTitle,
+      description: APP_DESCRIPTION,
+      url: APP_URL,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: appDefaultTitle,
+      description: APP_DESCRIPTION,
+    },
+    other: {
+      "mobile-web-app-capable": "yes",
+      "apple-mobile-web-app-capable": "yes",
+      "apple-mobile-web-app-status-bar-style": "default",
+      "apple-mobile-web-app-title": appName,
+    },
+  };
+}
 
 export default function RootLayout({
   children,
