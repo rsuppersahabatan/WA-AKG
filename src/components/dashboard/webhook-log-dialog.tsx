@@ -179,7 +179,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
 
     return (
         <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-            <DialogContent className="max-w-6xl sm:max-w-6xl w-[96vw] h-[90vh] flex flex-col p-0 overflow-hidden gap-0">
+            <DialogContent className="max-w-5xl sm:max-w-5xl w-[96vw] h-[90vh] flex flex-col p-0 overflow-hidden gap-0">
                 <DialogHeader className="p-4 sm:p-6 border-b shrink-0 flex flex-row items-center justify-between">
                     <div className="space-y-1">
                         <DialogTitle className="flex items-center gap-2 text-lg font-bold">
@@ -339,82 +339,78 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                             {selectedLog ? (
                                 <div className="flex-1 flex flex-col min-h-0">
                                     {/* Details Subheader */}
-                                    <div className="p-4 border-b flex flex-col gap-3 bg-slate-50/30 shrink-0">
-                                        <div className="flex items-center justify-between gap-2">
+                                    <div className="p-3 px-4 border-b flex flex-col gap-2.5 bg-slate-50/30 shrink-0">
+                                        <div className="flex items-center justify-between gap-2 flex-wrap">
                                             {/* Mobile Back Button */}
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                className="md:hidden -ml-2 text-xs flex items-center gap-1"
+                                                className="md:hidden -ml-2 h-7 px-2 text-xs flex items-center gap-1"
                                                 onClick={() => setShowMobileDetails(false)}
                                             >
                                                 <ArrowLeft className="h-4 w-4" />
-                                                Back to List
+                                                Back
                                             </Button>
-                                            
-                                            <span className="text-[10px] text-muted-foreground font-mono truncate hidden md:inline">
-                                                LOG ID: {selectedLog.id}
-                                            </span>
-                                        </div>
 
-                                        <div className="flex flex-wrap items-center gap-3">
-                                            <span className="text-xs font-semibold font-mono bg-slate-100 border px-2 py-0.5 rounded text-slate-800">
-                                                {selectedLog.event}
-                                            </span>
+                                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                                                <span className="font-semibold font-mono bg-slate-100 border px-1.5 py-0.5 rounded text-slate-800">
+                                                    {selectedLog.event}
+                                                </span>
 
-                                            <Badge
-                                                variant={selectedLog.status === "SUCCESS" ? "default" : "destructive"}
-                                                className={cn(
-                                                    "px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
-                                                    selectedLog.status === "SUCCESS" ? "bg-emerald-600 hover:bg-emerald-600 text-white" : ""
-                                                )}
-                                            >
-                                                {selectedLog.status}
-                                            </Badge>
+                                                <Badge
+                                                    variant={selectedLog.status === "SUCCESS" ? "default" : "destructive"}
+                                                    className={cn(
+                                                        "px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wider",
+                                                        selectedLog.status === "SUCCESS" ? "bg-emerald-600 hover:bg-emerald-600 text-white" : ""
+                                                    )}
+                                                >
+                                                    {selectedLog.status}
+                                                </Badge>
 
-                                            {selectedLog.responseStatusCode != null && (
-                                                <div className="flex items-center gap-1">
-                                                    <span className="text-xs text-muted-foreground">Status:</span>
+                                                {selectedLog.responseStatusCode != null && (
                                                     <span className={cn(
-                                                        "text-xs font-bold font-mono",
+                                                        "font-bold font-mono text-xs",
                                                         selectedLog.responseStatusCode >= 400 ? "text-red-500" : "text-emerald-600"
                                                     )}>
                                                         {selectedLog.responseStatusCode}
                                                     </span>
-                                                </div>
-                                            )}
+                                                )}
 
-                                            {selectedLog.responseTimeMs != null && (
-                                                <div className="flex items-center gap-1">
-                                                    <span className="text-xs text-muted-foreground">Latency:</span>
-                                                    <span className="text-xs font-semibold font-mono text-slate-700">
-                                                        {selectedLog.responseTimeMs}ms
+                                                {selectedLog.responseTimeMs != null && (
+                                                    <span className="text-muted-foreground text-xs font-mono">
+                                                        ({selectedLog.responseTimeMs}ms)
                                                     </span>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* URL bar */}
-                                        <div className="flex items-center gap-2 bg-slate-100/60 p-2 rounded-lg border border-slate-200/50">
-                                            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider shrink-0 select-none px-1">
-                                                POST
-                                            </span>
-                                            <div className="text-[11px] font-mono text-slate-700 truncate flex-1 select-all" title={selectedLog.requestUrl}>
-                                                {selectedLog.requestUrl}
+                                                )}
                                             </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0"
-                                                onClick={() => copyToClipboard(selectedLog.requestUrl, "URL copied to clipboard")}
-                                            >
-                                                <Copy className="h-3.5 w-3.5" />
-                                            </Button>
+
+                                            <span className="text-[10px] text-muted-foreground font-mono truncate hidden lg:inline">
+                                                ID: {selectedLog.id}
+                                            </span>
                                         </div>
 
-                                        <div className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                            <Info className="h-3.5 w-3.5 text-muted-foreground/80" />
-                                            Attempted at {formatTime(selectedLog.createdAt)}
+                                        {/* URL bar + Attempted timestamp consolidated */}
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                            <div className="flex items-center gap-1.5 bg-slate-100/60 py-1 px-2 rounded border border-slate-200/50 flex-1 max-w-full min-w-0">
+                                                <span className="text-[9px] font-bold text-slate-500 shrink-0 select-none">
+                                                    POST
+                                                </span>
+                                                <div className="text-[10px] font-mono text-slate-600 truncate flex-1 select-all" title={selectedLog.requestUrl}>
+                                                    {selectedLog.requestUrl}
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-5 w-5 text-muted-foreground hover:text-foreground shrink-0"
+                                                    onClick={() => copyToClipboard(selectedLog.requestUrl, "URL copied to clipboard")}
+                                                >
+                                                    <Copy className="h-3 w-3" />
+                                                </Button>
+                                            </div>
+
+                                            <div className="text-[10px] text-muted-foreground shrink-0 flex items-center gap-1 whitespace-nowrap self-end sm:self-auto">
+                                                <Info className="h-3 w-3" />
+                                                {formatTime(selectedLog.createdAt)}
+                                            </div>
                                         </div>
                                     </div>
 
