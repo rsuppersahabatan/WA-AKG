@@ -49,14 +49,26 @@ interface Props {
     onClose: () => void;
 }
 
-function formatTime(ts: string) {
+function formatTime(ts: string, tz: string) {
+    if (!ts) return "";
     const d = new Date(ts);
-    return d.toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+    if (isNaN(d.getTime())) return ts || "";
+    try {
+        return d.toLocaleString("id-ID", { timeZone: tz });
+    } catch {
+        return d.toLocaleString("id-ID");
+    }
 }
 
-function formatTimeOnly(ts: string) {
+function formatTimeOnly(ts: string, tz: string) {
+    if (!ts) return "";
     const d = new Date(ts);
-    return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    if (isNaN(d.getTime())) return "";
+    try {
+        return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: tz });
+    } catch {
+        return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    }
 }
 
 function formatJson(obj: any): string {
@@ -75,13 +87,29 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
     const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<"payload" | "response" | "headers">("payload");
     const [showMobileDetails, setShowMobileDetails] = useState(false);
+    const [timezone, setTimezone] = useState<string>("Asia/Jakarta");
 
-    // Reset log selection when dialog changes state
+    // Reset log selection and fetch timezone when dialog changes state
     useEffect(() => {
         if (open) {
             setSelectedLogId(null);
             setShowMobileDetails(false);
             setActiveTab("payload");
+
+            const fetchTimezone = async () => {
+                try {
+                    const res = await fetch("/api/settings/system");
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data?.status && data?.data?.timezone) {
+                            setTimezone(data.data.timezone);
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch system timezone", e);
+                }
+            };
+            fetchTimezone();
         }
     }, [open]);
 
@@ -308,7 +336,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                                     {log.event}
                                                 </span>
                                                 <span className="text-[10px] text-slate-400 font-mono">
-                                                    {formatTimeOnly(log.createdAt)}
+                                                    {formatTimeOnly(log.createdAt, timezone)}
                                                 </span>
                                             </div>
 
@@ -452,7 +480,7 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
                                             <div className="flex items-center gap-1.5">
                                                 <Info className="h-3.5 w-3.5 text-slate-400/80" />
                                                 <span>Attempted:</span>
-                                                <span className="font-semibold text-slate-600">{formatTime(selectedLog.createdAt)}</span>
+                                                <span className="font-semibold text-slate-600">{formatTime(selectedLog.createdAt, timezone)}</span>
                                             </div>
                                             <span className="text-slate-300 hidden sm:inline select-none">•</span>
                                             <div className="flex items-center gap-1">
