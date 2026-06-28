@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { SessionGuard } from "@/components/dashboard/session-guard";
+import WebhookLogDialog from "@/components/dashboard/webhook-log-dialog";
 
 interface WebhookConfig {
     id: string;
@@ -92,11 +93,9 @@ export default function WebhooksPage() {
     const [testResults, setTestResults] = useState<Record<string, any>>({});
 
     // Log viewer state
-    const [expandedLog, setExpandedLog] = useState<string | null>(null);
-    const [loadingLogs, setLoadingLogs] = useState<string | null>(null);
-    const [loadingMore, setLoadingMore] = useState<string | null>(null);
-    const [logs, setLogs] = useState<Record<string, WebhookLog[]>>({});
-    const [logMeta, setLogMeta] = useState<Record<string, { total: number; offset: number; limit: number }>>({});
+    const [logDialogId, setLogDialogId] = useState<string | null>(null);
+    const [logDialogName, setLogDialogName] = useState("");
+    const [logDialogSessionId, setLogDialogSessionId] = useState("");
 
     useEffect(() => {
         if (sessions.length > 0) {
@@ -167,10 +166,6 @@ export default function WebhooksPage() {
             } else {
                 toast.error(`Webhook test failed: ${data?.data?.error || "Unknown error"}`);
             }
-            // Auto-refresh logs after test if viewer is open
-            if (expandedLog === webhook.id) {
-                fetchLogs(webhook.id);
-            }
         } catch (error: any) {
             setTestResults(prev => ({ ...prev, [webhook.id]: { success: false, error: error.message } }));
             toast.error("Failed to test webhook");
@@ -179,90 +174,18 @@ export default function WebhooksPage() {
         }
     };
 
-    const fetchLogs = async (webhookId: string) => {
-        // Fetch first page (latest) — replaces existing list for fresh view
-        setLoadingLogs(webhookId);
-        try {
-            const webhook = webhooks.find(w => w.id === webhookId);
-            const targetSessionId = webhook?.sessionId || sessionId;
-            const res = await fetch(`/api/webhooks/${targetSessionId}/${webhookId}/logs?limit=50&offset=0`);
-            if (res.ok) {
-                const data = await res.json();
-                setLogs(prev => ({ ...prev, [webhookId]: data?.data || [] }));
-                setLogMeta(prev => ({ ...prev, [webhookId]: { total: data.total || 0, offset: 50, limit: 50 } }));
-            }
-        } catch (error) {
-            console.error("Failed to fetch logs", error);
-        } finally {
-            setLoadingLogs(null);
-        }
+    const openLogDialog = (webhook: WebhookConfig) => {
+        const targetSessionId = webhook.sessionId || sessionId || "";
+        setLogDialogId(webhook.id);
+        setLogDialogName(webhook.name);
+        setLogDialogSessionId(targetSessionId);
     };
 
-    const loadMoreLogs = async (webhookId: string) => {
-        const meta = logMeta[webhookId];
-        if (!meta || loadingMore === webhookId) return;
-        setLoadingMore(webhookId);
-        try {
-            const webhook = webhooks.find(w => w.id === webhookId);
-            const targetSessionId = webhook?.sessionId || sessionId;
-            const res = await fetch(`/api/webhooks/${targetSessionId}/${webhookId}/logs?limit=50&offset=${meta.offset}`);
-            if (res.ok) {
-                const data = await res.json();
-                const newEntries = data?.data || [];
-                setLogs(prev => ({
-                    ...prev,
-                    [webhookId]: [...(prev[webhookId] || []), ...newEntries]
-                }));
-                setLogMeta(prev => ({
-                    ...prev,
-                    [webhookId]: {
-                        total: data.total || meta.total,
-                        offset: meta.offset + newEntries.length,
-                        limit: 50
-                    }
-                }));
-            }
-        } catch (error) {
-            console.error("Failed to load more logs", error);
-        } finally {
-            setLoadingMore(null);
-        }
+    const closeLogDialog = () => {
+        setLogDialogId(null);
+        setLogDialogName("");
+        setLogDialogSessionId("");
     };
-
-    const toggleLogViewer = async (webhookId: string) => {
-        if (expandedLog === webhookId) {
-            setExpandedLog(null);
-            return;
-        }
-        setExpandedLog(webhookId);
-        fetchLogs(webhookId);
-    };
-
-    // Realtime polling: check for new entries every 5s while log viewer is expanded
-    useEffect(() => {
-        if (!expandedLog) return;
-        const interval = setInterval(async () => {
-            const webhook = webhooks.find(w => w.id === expandedLog);
-            if (!webhook) return;
-            const targetSessionId = webhook?.sessionId || sessionId;
-            try {
-                // Fetch only latest entry to check for new ones
-                const res = await fetch(`/api/webhooks/${targetSessionId}/${expandedLog}/logs?limit=1&offset=0`);
-                if (res.ok) {
-                    const data = await res.json();
-                    const latestArr = data?.data || [];
-                    const currentLogs = logs[expandedLog] || [];
-                    // If new entry arrived, refresh first page (keep loaded-more entries intact)
-                    if (latestArr.length > 0 && (currentLogs.length === 0 || latestArr[0].id !== currentLogs[0]?.id)) {
-                        fetchLogs(expandedLog);
-                    }
-                }
-            } catch {
-                // silent
-            }
-        }, 5000);
-        return () => clearInterval(interval);
-    }, [expandedLog, sessionId, webhooks]);
 
     // Edit state
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -565,9 +488,6 @@ export default function WebhooksPage() {
                             webhooks.map((webhook) => {
                                 const isTesting = testingId === webhook.id;
                                 const testResult = testResults[webhook.id];
-                                const isLogExpanded = expandedLog === webhook.id;
-                                const webhookLogs = logs[webhook.id];
-                                const isLoadingLogs = loadingLogs === webhook.id;
 
                                 return (
                                     <Card key={webhook.id} className={webhook.isActive ? "" : "opacity-60"}>
@@ -633,11 +553,10 @@ export default function WebhooksPage() {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    onClick={() => toggleLogViewer(webhook.id)}
+                                                    onClick={() => openLogDialog(webhook)}
                                                 >
                                                     <History className="h-4 w-4 mr-1" />
                                                     Logs
-                                                    {isLogExpanded ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
                                                 </Button>
                                             </div>
 
@@ -665,164 +584,6 @@ export default function WebhooksPage() {
                                                             <summary className="cursor-pointer text-xs">Response Body</summary>
                                                             <pre className="mt-1 text-xs overflow-x-auto">{testResult.responseBody}</pre>
                                                         </details>
-                                                    )}
-                                                </div>
-                                            )}
-
-                                            {/* Log Viewer */}
-                                            {isLogExpanded && (
-                                                <div className="border rounded-md">
-                                                    <div className="p-2 bg-slate-50 border-b flex items-center justify-between">
-                                                        <span className="text-xs font-medium text-muted-foreground flex items-center gap-2">
-                                                            <History className="h-3 w-3" />
-                                                            Delivery History
-                                                            {webhookLogs && (
-                                                                <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded-full">
-                                                                    {webhookLogs.length}
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                        <div className="flex items-center gap-2">
-                                                            {isLoadingLogs && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-                                                            <span className="text-[10px] text-muted-foreground" title="Auto-refreshes every 5s">
-                                                                live
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    {isLoadingLogs && !webhookLogs ? (
-                                                        <div className="p-4 text-center text-sm text-muted-foreground">
-                                                            <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
-                                                            Loading logs...
-                                                        </div>
-                                                    ) : webhookLogs && webhookLogs.length > 0 ? (
-                                                        <ScrollArea className="max-h-96">
-                                                            <div className="divide-y">
-                                                                {webhookLogs.map((log) => (
-                                                                    <div key={log.id}
-                                                                        className={`p-3 space-y-1 text-sm ${
-                                                                            log.status === "SUCCESS"
-                                                                                ? "hover:bg-green-50/30"
-                                                                                : "bg-red-50/30 hover:bg-red-50/60"
-                                                                        }`}
-                                                                    >
-                                                                        {/* Header row */}
-                                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                                            <Badge
-                                                                                variant={log.status === "SUCCESS" ? "default" : "destructive"}
-                                                                                className="text-[10px] px-1.5 py-0"
-                                                                            >
-                                                                                {log.status}
-                                                                            </Badge>
-                                                                            <span className="text-xs font-mono text-muted-foreground bg-slate-100 px-1 rounded">
-                                                                                {log.event}
-                                                                            </span>
-                                                                            {log.responseStatusCode != null && (
-                                                                                <span className={`text-xs font-mono font-semibold ${
-                                                                                    log.responseStatusCode < 400 ? "text-green-600" : "text-red-600"
-                                                                                }`}>
-                                                                                    {log.responseStatusCode}
-                                                                                </span>
-                                                                            )}
-                                                                            {log.responseTimeMs != null && (
-                                                                                <span className="text-xs text-muted-foreground">
-                                                                                    {log.responseTimeMs < 1000
-                                                                                        ? `${log.responseTimeMs}ms`
-                                                                                        : `${(log.responseTimeMs / 1000).toFixed(1)}s`}
-                                                                                </span>
-                                                                            )}
-                                                                            <span className="text-[10px] text-muted-foreground ml-auto whitespace-nowrap" title={formatTime(log.createdAt)}>
-                                                                                {formatTime(log.createdAt)}
-                                                                            </span>
-                                                                        </div>
-
-                                                                        {/* URL */}
-                                                                        <div className="text-xs font-mono text-muted-foreground truncate" title={log.requestUrl}>
-                                                                            {log.requestUrl}
-                                                                        </div>
-
-                                                                        {/* Error message - prominent */}
-                                                                        {log.errorMessage && (
-                                                                            <div className="text-xs text-red-600 bg-red-50 border border-red-100 p-1.5 rounded flex items-start gap-1">
-                                                                                <span className="font-bold">✗</span>
-                                                                                <span>{log.errorMessage}</span>
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* Detailed expandable sections */}
-                                                                        <div className="flex flex-wrap gap-2 pt-1">
-                                                                            {log.requestBody && (
-                                                                                <details className="text-xs flex-1 min-w-0">
-                                                                                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                                                                                        Request Body
-                                                                                    </summary>
-                                                                                    <pre className="mt-1 bg-slate-50 p-2 rounded overflow-x-auto max-h-28 text-[10px] border">
-                                                                                        {formatJson(log.requestBody)}
-                                                                                    </pre>
-                                                                                </details>
-                                                                            )}
-                                                                            {log.responseBody && (
-                                                                                <details className="text-xs flex-1 min-w-0">
-                                                                                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                                                                                        Response Body
-                                                                                    </summary>
-                                                                                    <pre className="mt-1 bg-slate-50 p-2 rounded overflow-x-auto max-h-28 text-[10px] border">
-                                                                                        {log.responseBody.length > 1000
-                                                                                            ? log.responseBody.slice(0, 1000) + "..."
-                                                                                            : log.responseBody}
-                                                                                    </pre>
-                                                                                </details>
-                                                                            )}
-                                                                            {log.requestHeaders && (
-                                                                                <details className="text-xs flex-1 min-w-0">
-                                                                                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                                                                                        Headers
-                                                                                    </summary>
-                                                                                    <pre className="mt-1 bg-slate-50 p-2 rounded overflow-x-auto max-h-28 text-[10px] border">
-                                                                                        {formatJson(log.requestHeaders)}
-                                                                                    </pre>
-                                                                                </details>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                            {/* Load more */}
-                                                            {(() => {
-                                                                const meta = logMeta[webhook.id];
-                                                                const shown = webhookLogs?.length || 0;
-                                                                const total = meta?.total || 0;
-                                                                const hasMore = shown < total;
-                                                                const isLoadingMore = loadingMore === webhook.id;
-                                                                return hasMore ? (
-                                                                    <div className="p-2 border-t">
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            className="w-full text-xs"
-                                                                            onClick={() => loadMoreLogs(webhook.id)}
-                                                                            disabled={isLoadingMore}
-                                                                        >
-                                                                            {isLoadingMore ? (
-                                                                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                                                                            ) : (
-                                                                                <ChevronDown className="h-3 w-3 mr-1" />
-                                                                            )}
-                                                                            Load {total - shown} more
-                                                                        </Button>
-                                                                    </div>
-                                                                ) : shown > 0 ? (
-                                                                    <div className="p-2 border-t text-[10px] text-center text-muted-foreground">
-                                                                        Showing all {total} entries
-                                                                    </div>
-                                                                ) : null;
-                                                            })()}
-                                                        </ScrollArea>
-                                                    ) : (
-                                                        <div className="p-6 text-center text-sm text-muted-foreground space-y-2">
-                                                            <History className="h-8 w-8 mx-auto opacity-30" />
-                                                            <p>No delivery logs yet.</p>
-                                                            <p className="text-xs">Webhook logs appear here after events are dispatched or when you click "Test".</p>
-                                                        </div>
                                                     )}
                                                 </div>
                                             )}
@@ -899,6 +660,17 @@ export default function WebhooksPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Webhook Log Dialog */}
+            {logDialogId && (
+                <WebhookLogDialog
+                    webhookId={logDialogId}
+                    webhookName={logDialogName}
+                    targetSessionId={logDialogSessionId}
+                    open={!!logDialogId}
+                    onClose={closeLogDialog}
+                />
+            )}
         </div>
     );
 }
