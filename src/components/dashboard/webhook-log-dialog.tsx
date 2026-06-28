@@ -179,44 +179,44 @@ export default function WebhookLogDialog({ webhookId, webhookName, targetSession
 
     return (
         <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-            <DialogContent className="max-w-5xl sm:max-w-5xl w-[96vw] h-[90vh] flex flex-col p-0 overflow-hidden gap-0 bg-background shadow-2xl border border-slate-200/80">
+            <DialogContent className="max-w-5xl sm:max-w-5xl w-[96vw] h-[82vh] max-h-[85vh] flex flex-col p-0 overflow-hidden gap-0 bg-background shadow-2xl border border-slate-200/80">
                 <style dangerouslySetInnerHTML={{ __html: `
                     .custom-scrollbar-light {
                         scrollbar-width: thin;
-                        scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+                        scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
                     }
                     .custom-scrollbar-light::-webkit-scrollbar {
-                        width: 5px;
-                        height: 5px;
+                        width: 6px;
+                        height: 6px;
                     }
                     .custom-scrollbar-light::-webkit-scrollbar-track {
                         background: transparent;
                     }
                     .custom-scrollbar-light::-webkit-scrollbar-thumb {
-                        background: rgba(148, 163, 184, 0.3);
+                        background: rgba(148, 163, 184, 0.4);
                         border-radius: 99px;
                     }
                     .custom-scrollbar-light::-webkit-scrollbar-thumb:hover {
-                        background: rgba(148, 163, 184, 0.5);
+                        background: rgba(148, 163, 184, 0.6);
                     }
 
                     .custom-scrollbar-dark {
                         scrollbar-width: thin;
-                        scrollbar-color: rgba(148, 163, 184, 0.2) #0f141c;
+                        scrollbar-color: rgba(148, 163, 184, 0.3) #0f141c;
                     }
                     .custom-scrollbar-dark::-webkit-scrollbar {
-                        width: 5px;
-                        height: 5px;
+                        width: 6px;
+                        height: 6px;
                     }
                     .custom-scrollbar-dark::-webkit-scrollbar-track {
                         background: #0f141c;
                     }
                     .custom-scrollbar-dark::-webkit-scrollbar-thumb {
-                        background: rgba(148, 163, 184, 0.2);
+                        background: rgba(148, 163, 184, 0.3);
                         border-radius: 99px;
                     }
                     .custom-scrollbar-dark::-webkit-scrollbar-thumb:hover {
-                        background: rgba(148, 163, 184, 0.4);
+                        background: rgba(148, 163, 184, 0.5);
                     }
                 ` }} />
                 <DialogHeader className="p-4 sm:p-5 border-b shrink-0 flex flex-row items-center justify-between bg-slate-50/20">
