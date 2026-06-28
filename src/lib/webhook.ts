@@ -263,16 +263,16 @@ export async function downloadAndSaveMedia(message: WAMessage, sessionId: string
 }
 
 /**
- * Helper to dispatch message received event
- * Normalizes message content to match API structure
- */
-/**
- * Helper to get the own JID for a session from the WhatsAppManager
+ * Get WA-AKG's own clean phone JID for a session
+ * Strips device suffix (e.g. :47@s.whatsapp.net → @s.whatsapp.net)
  */
 function getOwnJid(sessionId: string): string | null {
     try {
         const instance = waManager.getInstance(sessionId);
-        return instance?.socket?.user?.id || null;
+        const jid = instance?.socket?.user?.id || null;
+        if (!jid) return null;
+        // Strip device suffix (e.g. :47) — Baileys includes device ID in user.id
+        return jid.replace(/:\d+(?=@)/g, '');
     } catch {
         return null;
     }
